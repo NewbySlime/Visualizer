@@ -1,0 +1,9 @@
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\bin\Debug\visualizer.dll
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\bin\Debug\visualizer.pdb
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\Debug\visualizer.csproj.AssemblyReference.cache
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\Debug\visualizer.AssemblyInfoInputs.cache
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\Debug\visualizer.AssemblyInfo.cs
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\Debug\visualizer.csproj.CoreCompileInputs.cache
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\Debug\visualizer.dll
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\Debug\visualizer.pdb
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\Debug\visualizer.GeneratedMSBuildEditorConfig.editorconfig

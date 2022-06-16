@@ -1,0 +1,58 @@
+Case of msgcode
+
+Note:
+  - At least a length of 4 bytes for header buffer
+  - If every msgcode doesn't have any format, then it is the usual 2 bytes header
+
+
+PINGMESSAGE
+To keep the connection going by sending or reading it every pollrate. It doesn't need to get another feedback PINGMESSAGE, it could be any other code message.
+
+
+
+SENDMESSAGE
+Sending a message.
+
+Format: hhhh
+  - 4 h bytes is a header bytes consist of msgcode (2) and msglen (2).
+  - then followed by the message packets
+
+
+
+EOBULKMESSAGE
+Message code to tell the listener or remote that there's no other message (not packet) incoming. Cannot be sent unless it's after SENDMESSAGE and there's no other message.
+
+
+
+UDPS_MSG
+The base format of UDP socket message.
+
+
+
+UDPS_CONNECTMSG (sent once)
+This will make sure that the socket is actually connected, and bind the ip and port to make sure another remote sender cannot connect to it.
+
+
+
+UDPS_DISCONNECTMSG (sent once)
+Based on the name, it will disconnect and makes it available for other remote sender to connect.
+
+
+
+UDPS_SETPOLLRATE
+This will tell listener or remote to change its polling rate.
+
+Format: hhp
+  - 2 h bytes is a message code (2)
+  - 1 p byte is the polling rate (1)
+
+
+
+UDPS_MSGACCEPTED
+A needed feedback after getting a message packet.
+
+
+
+UDPS_MAXMSGSIZE
+Sets how many bytes the remote or listener can handle in a single message.
+If the length is -1, then the message can be as long as the remote/listener can physically handle.

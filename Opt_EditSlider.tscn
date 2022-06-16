@@ -1,0 +1,31 @@
+[gd_scene load_steps=2 format=2]
+
+[ext_resource path="res://Opt_EditSlider.cs" type="Script" id=1]
+
+[node name="HBoxContainer" type="HBoxContainer"]
+margin_right = 250.0
+margin_bottom = 20.0
+alignment = 1
+script = ExtResource( 1 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Label" type="Label" parent="."]
+margin_top = 3.0
+margin_right = 123.0
+margin_bottom = 17.0
+size_flags_horizontal = 3
+text = "asdf"
+autowrap = true
+max_lines_visible = 1
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="HSlider" type="HSlider" parent="."]
+margin_left = 127.0
+margin_right = 250.0
+margin_bottom = 16.0
+size_flags_horizontal = 3
+max_value = 300.0

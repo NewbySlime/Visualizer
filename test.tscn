@@ -1,0 +1,28 @@
+[gd_scene load_steps=2 format=2]
+
+[ext_resource path="res://OptionTypeWindow.cs" type="Script" id=1]
+
+[node name="Control" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource( 1 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+options_name = PoolStringArray( "" )
+options_type = [ 0 ]
+options_code = PoolIntArray( 0 )
+
+[node name="OptionButton" type="OptionButton" parent="."]
+margin_right = 281.0
+margin_bottom = 90.0
+text = "dfgs"
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="ColorPickerButton" type="ColorPickerButton" parent="OptionButton"]
+margin_left = 357.0
+margin_top = 229.0
+margin_right = 724.0
+margin_bottom = 471.0

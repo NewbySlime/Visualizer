@@ -1,0 +1,45 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\GodotGamePorjectMono\\Visualizer\\visualizer.csproj": {}
+  },
+  "projects": {
+    "C:\\GodotGamePorjectMono\\Visualizer\\visualizer.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GodotGamePorjectMono\\Visualizer\\visualizer.csproj",
+        "projectName": "visualizer",
+        "projectPath": "C:\\GodotGamePorjectMono\\Visualizer\\visualizer.csproj",
+        "packagesPath": "C:\\Users\\ASUS\\.nuget\\packages\\",
+        "outputPath": "C:\\GodotGamePorjectMono\\Visualizer\\.mono\\temp\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\ASUS\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net472"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net472": {
+            "targetAlias": "net472",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        }
+      },
+      "frameworks": {
+        "net472": {
+          "targetAlias": "net472",
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\6.0.300\\RuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}
