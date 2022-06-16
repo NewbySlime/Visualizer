@@ -39,7 +39,7 @@ class SocketUDP{
 
     static void _onTimer(void *pobj);
     void _onTimer();
-    void _onUdpConnect(IPAddress ip, unsigned short port);
+    void _onUdpConnect();
     void _onUdpDisconnect();
     void _onUdpClose();
     void _queueMessage(unsigned short msgcode, void* message, unsigned short msglen);
