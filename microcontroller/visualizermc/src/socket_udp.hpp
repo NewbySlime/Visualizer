@@ -1,6 +1,9 @@
 #ifndef SOCKET_UDP
 #define SOCKET_UDP
 
+#include "WiFiUdp.h"
+#include "vector"
+
 #define MAX_UDPPACKETLEN 512
 #define MAX_UDPMSGLEN 2048
 #define MAX_DATAQUEUE 16
@@ -26,6 +29,7 @@ class SocketUDP{
     int _isrtimer_num = -1;
     unsigned short _maxmsgsize = MAX_UDPMSGLEN;
     int _intervalms;
+    int _timesNotRespond = 0;
 
     bool _alreadyconnected = false;
     bool _doCloseSocket = false;
@@ -44,9 +48,11 @@ class SocketUDP{
     void _onUdpClose();
     void _queueMessage(unsigned short msgcode, void* message, unsigned short msglen);
     bool _checkIfSameRemoteHost();
+    int _parsePacketsUntilCorrect();
 
   public:
     SocketUDP();
+    ~SocketUDP();
     void startlistening(unsigned short port);
 
     // send disconnect message and makes it available to connect to another address

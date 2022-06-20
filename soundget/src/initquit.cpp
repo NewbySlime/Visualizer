@@ -54,6 +54,7 @@ void _onInitProg(){
   std::signal(SIGSEGV, __onProgTerminated);
 }
 
+// FIXME check on every function, since it produces exception
 void _onQuitProg(){
   if(!__firstQuitF){
     __firstQuitF = true;

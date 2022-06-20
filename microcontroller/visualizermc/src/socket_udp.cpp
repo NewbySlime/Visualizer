@@ -1,10 +1,9 @@
 #include "socket_udp.hpp"
 #include "ESP8266WiFi.h"
 #include "WiFiUdp.h"
+#include "ByteIterator.hpp"
 
 #include "timer.hpp"
-
-#include "vector"
 
 #define _timer1_MaxValue 0x7FFFFF
 #define _S_IN_US 1000000
@@ -37,22 +36,21 @@ const unsigned short UDPS_MSG = 0x7000;
 const unsigned short UDPS_CONNECTMSG = UDPS_MSG + 0x1;
 const unsigned short UDPS_DISCONNECTMSG = UDPS_MSG + 0x2;
 const unsigned short UDPS_SETPOLLRATE = UDPS_MSG + 0x3;
-const unsigned short UDPS_MSGACCEPTED = UDPS_MSG + 0x4;
 const unsigned short UDPS_SETMAXMSGSIZE = UDPS_MSG + 0x5;
 
 
 const IPAddress NulIP{0};
 
 
+
 void SocketUDP::_onTimer(void *pobj){
   ((SocketUDP*)pobj)->_onTimer();
 }
 
-
 void SocketUDP::_set_pollingrate(unsigned char rateHz){
   _intervalms = 1000/rateHz;
   if(_isrtimer_num >= 0){
-    ISR_Timer.changeInterval(_isrtimer_num, _intervalms);
+    timer_changeInterval(_isrtimer_num, _intervalms);
   }
 }
 
@@ -65,42 +63,152 @@ void SocketUDP::_set_maxmsgsize(unsigned short maxmsgsize){
     _maxmsgsize = maxmsgsize;
 }
 
-// TODO: change the code based on the sender one
-// TODO: should test whether the sender is the right one
-// TODO: add a checking for if the remote is going unexpectedly disconnected
 void SocketUDP::_onTimer(){
   int packetLength = wifiudp.parsePacket();
   // if it needs a connection first
-  if(!_alreadyconnected){
+  if(!_alreadyconnected && packetLength > 0){
     wifiudp.read(msgheader, SIZEOFMSGHEADER);
     unsigned short msgcode = *reinterpret_cast<unsigned short*>(msgheader);
-    if(msgcode == UDPS_CONNECTMSG)
-      _onUdpConnect(wifiudp.remoteIP(), wifiudp.remotePort());
+    if(msgcode == UDPS_CONNECTMSG){
+      Serial.printf("Connected.\n");
+      _onUdpConnect();
+
+      wifiudp.beginPacket(remoteIP, remotePort);
+      wifiudp.write(reinterpret_cast<const char*>(&UDPS_CONNECTMSG), sizeof(UDPS_CONNECTMSG));
+      wifiudp.endPacket();
+    }
     
-    // parse another packet or message
-    packetLength = wifiudp.parsePacket();
+    return;
   }
 
-  while(packetLength > 0 && !_checkIfSameRemoteHost()){
-    wifiudp.flush();
+  while(packetLength > 0 && !_checkIfSameRemoteHost())
     packetLength = wifiudp.parsePacket();
-  }
 
   if(packetLength > 0){
+    _timesNotRespond = 0;
     unsigned short msgcode = 0;
     
     // reading the message
-    while(msgcode != EOBULKMESSAGE){
+    bool keepRecv = true;
+    while(keepRecv && packetLength > 0){
       wifiudp.read(msgheader, SIZEOFMSGHEADER);
       msgcode = *reinterpret_cast<unsigned short*>(msgheader);
 
-      // TODO check based on the msgcode
       switch(msgcode){
-        break; case UDPS_CONNECTMSG:
-          if(!_alreadyconnected)
-            _onUdpConnect();
+        break; case UDPS_SETPOLLRATE:
+          _set_pollingrate(*reinterpret_cast<unsigned char*>(msgheader+sizeof(msgcode)));
+        
+        break; case UDPS_SETMAXMSGSIZE:
+          _set_maxmsgsize(*reinterpret_cast<unsigned short*>(msgheader+sizeof(msgcode)));
+        
+        break; case UDPS_DISCONNECTMSG:
+          _onUdpDisconnect();
+          return;
+
+        break; case SENDMESSAGE:{
+          int msgread = 0;
+          unsigned short msglen = *reinterpret_cast<unsigned short*>(msgheader+sizeof(msgcode));
+          bool dontread = false;
+          
+          if(msglen > MAX_UDPMSGLEN)
+            dontread = true;
+
+          while(msgread < msglen){
+            packetLength = _parsePacketsUntilCorrect();
+
+            if(packetLength <= 0)
+              break;
+
+            if(!dontread){
+              packetLength = min(packetLength, msglen-msgread);
+              wifiudp.read(buffer+msgread, packetLength);
+            }
+
+            msgread += packetLength;
+          }
+
+          if(!dontread)
+            callbackOnPacket(buffer, msgread);
+        }
+
+        break;
+        case EOBULKMESSAGE:
+        Serial.printf("end of messages\n");
+        case PINGMESSAGE:
+          keepRecv = false;
       }
+
+      packetLength = _parsePacketsUntilCorrect();
     }
+
+
+    // sending the message
+    if(appendedMessages.size() > 0){
+      for(size_t i = 0; i < appendedMessages.size(); i++){
+        _message msgdat = appendedMessages[i];
+        printf("sending msgdat 0x%X\n", msgdat.msgcode);
+        
+        bool _useMsg = false;
+        switch(msgdat.msgcode){
+          break; case UDPS_SETPOLLRATE:
+            _set_pollingrate(*reinterpret_cast<unsigned char*>(msgdat.buffer));
+            _useMsg = true;
+          
+          break; case UDPS_SETMAXMSGSIZE:
+            _set_maxmsgsize(*reinterpret_cast<unsigned short*>(msgdat.buffer));
+            _useMsg = true;
+        }
+
+        ByteIteratorR _bir{msgheader, SIZEOFMSGHEADER};   
+        _bir.setVar(msgdat.msgcode);
+
+        if(_useMsg)
+          _bir.setVar(msgdat.buffer, msgdat.bufferlen);
+        else
+          _bir.setVar(msgdat.bufferlen);
+        
+        wifiudp.beginPacket(remoteIP, remotePort);
+        wifiudp.write(msgheader, SIZEOFMSGHEADER);
+        wifiudp.endPacket();
+
+        if(msgdat.buffer != NULL){
+          int msgsent = 0;
+          while(msgsent < msgdat.bufferlen){
+            int packetlen = min(msgdat.bufferlen-msgsent, MAX_UDPPACKETLEN);
+            wifiudp.beginPacket(remoteIP, remotePort);
+            wifiudp.write(reinterpret_cast<char*>(msgdat.buffer)+msgsent, packetlen);
+            wifiudp.endPacket();
+
+            msgsent += packetlen;
+          }
+        }
+
+        if(msgdat.buffer != NULL){
+          delete msgdat.buffer;
+          msgdat.buffer = NULL;
+        }
+
+        if(msgdat.msgcode == UDPS_DISCONNECTMSG){
+          _onUdpDisconnect();
+          return;
+        }
+      }
+
+      appendedMessages.resize(0);
+      
+      wifiudp.beginPacket(remoteIP, remotePort);
+      wifiudp.write(reinterpret_cast<const char*>(&EOBULKMESSAGE), sizeof(EOBULKMESSAGE));
+      wifiudp.endPacket();
+    }
+    else{
+      wifiudp.beginPacket(remoteIP, remotePort);
+      wifiudp.write(reinterpret_cast<const char*>(&PINGMESSAGE), sizeof(PINGMESSAGE));
+      wifiudp.endPacket();
+    }
+  }
+  else if(_alreadyconnected && ++_timesNotRespond > MAXTIMESRESPUDP){
+    _timesNotRespond = 0;
+    _onUdpDisconnect();
   }
 
   if(!_alreadyconnected && _doCloseSocket)
@@ -120,9 +228,10 @@ void SocketUDP::_onUdpConnect(){
 void SocketUDP::_onUdpDisconnect(){
   remoteIP = NulIP;
   remotePort = 0;
+  printf("disconnected.\n");
   _alreadyconnected = false;
 
-  for(int i = 0; i < appendedMessages.size(); i++)
+  for(size_t i = 0; i < appendedMessages.size(); i++)
     if(appendedMessages[i].buffer != NULL)
       delete appendedMessages[i].buffer;
 
@@ -130,7 +239,7 @@ void SocketUDP::_onUdpDisconnect(){
 }
 
 void SocketUDP::_onUdpClose(){
-  ISR_Timer.deleteTimer(_isrtimer_num);
+  timer_deleteTimer(_isrtimer_num);
   _isrtimer_num = -1;
   delete buffer;
   delete msgheader;
@@ -145,11 +254,19 @@ void SocketUDP::_queueMessage(unsigned short msgcode, void* msg, unsigned short 
       .bufferlen = msglen
     });
   else if(msg != NULL)
-   delete msg;
+    delete msg;
 }
 
 bool SocketUDP::_checkIfSameRemoteHost(){
-  return wifiudp.remoteIP == remoteIP && wifiudp.remotePort() == remotePort;
+  return wifiudp.remoteIP() == remoteIP && wifiudp.remotePort() == remotePort;
+}
+
+int SocketUDP::_parsePacketsUntilCorrect(){
+  int packetLength = wifiudp.parsePacket();
+  while(packetLength > 0 && !_checkIfSameRemoteHost())
+    packetLength = wifiudp.parsePacket();
+
+  return packetLength;
 }
 
 
@@ -159,12 +276,16 @@ SocketUDP::SocketUDP(){
   appendedMessages.reserve(MAX_DATAQUEUE);
 }
 
+SocketUDP::~SocketUDP(){
+  close_socket();
+}
+
 void SocketUDP::startlistening(unsigned short port){
   wifiudp.begin(port);
-  buffer = new char[MAX_UDPPACKETLEN];
+  buffer = new char[MAX_UDPMSGLEN];
   msgheader = new char[SIZEOFMSGHEADER];
 
-  _isrtimer_num = ISR_Timer.setInterval(_intervalms, _onTimer, this);
+  _isrtimer_num = timer_setInterval(_intervalms, _onTimer, this);
 }
 
 void SocketUDP::disconnect(){
@@ -188,6 +309,13 @@ bool SocketUDP::isconnected(){
 void SocketUDP::set_pollingrate(unsigned char rateHz){
   unsigned char *prhz = new unsigned char(rateHz);
   _queueMessage(UDPS_SETPOLLRATE, prhz, sizeof(rateHz));
+}
+
+void SocketUDP::set_msgmaxsize(unsigned short msglen){
+  if(msglen <= MAX_UDPMSGLEN){
+    unsigned short *pml = new unsigned short(msglen);
+    _queueMessage(UDPS_SETMAXMSGSIZE, pml, sizeof(msglen));
+  }
 }
 
 void SocketUDP::set_callback(SocketUDP_Callback cb){

@@ -5,6 +5,7 @@
 #include "WS2tcpip.h"
 #include "thread"
 #include "mutex"
+#include "condition_variable"
 #include "utility"
 #include "queue"
 
@@ -62,6 +63,7 @@ class SocketHandler_Sync{
 };
 
 
+// No function for closing the socket because it isn't a listener
 class SocketHandlerUDP_Async{
   private:
     struct _message{
@@ -75,7 +77,8 @@ class SocketHandlerUDP_Async{
     SOCKET currSock;
 
     std::chrono::milliseconds sleepTime;
-    std::mutex m_messageQueues, m_sleepTime;
+    std::mutex m_messageQueues, m_onDisconnect;
+    std::condition_variable cv_disconnect;
     std::thread udpthread;
 
     // carefull when the message buffer is actually null
@@ -84,7 +87,7 @@ class SocketHandlerUDP_Async{
     bool _actuallyConnected = false;
     int _maxmsgsize = -1;
 
-    static void dumpfunc1(char*,int){}
+    static void dumpfunc1(const char*,int){}
     static void dumpfunc2(){}
 
 
@@ -92,8 +95,6 @@ class SocketHandlerUDP_Async{
     void sleepThread(std::chrono::duration<double> procduration);
 
     void _QueueMessage(unsigned short code, void* msg = NULL, unsigned short msglen = 0);
-    void _sendAccept();
-    bool _isAccepted();
 
     void on_udpdisconnect();
     void on_udppollrate(unsigned char rateHz);
@@ -105,7 +106,7 @@ class SocketHandlerUDP_Async{
     }
     
   public:
-    typedef void (*SocketCallback)(char*, int);
+    typedef void (*SocketCallback)(const char*, int);
     typedef void (*SocketCallbackvoid)();
 
     SocketHandlerUDP_Async();
@@ -117,8 +118,10 @@ class SocketHandlerUDP_Async{
     void QueueMessage(char* msg, int len);
     // this will also tell to remoteHost to change its pollrate
     void ChangePollrate(unsigned char rateHz);
+    // don't delete the buffer when the callback called
     void SetCallback(SocketCallback cb);
     void SetCallback_disconnect(SocketCallbackvoid cb);
+    void WaitUntilDisconnect();
     void Disconnect();
   
   

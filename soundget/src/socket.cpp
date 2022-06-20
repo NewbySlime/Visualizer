@@ -8,6 +8,7 @@
 #include "chrono"
 
 
+
 // if the socket isn't connected n many times, the socket will stop updating
 const int MAXTIMESRESPUDP = 5;
 const int SIZEOFMSGHEADER = 4;
@@ -24,7 +25,6 @@ const unsigned short UDPS_MSG = 0x7000;
 const unsigned short UDPS_CONNECTMSG = UDPS_MSG + 0x1;
 const unsigned short UDPS_DISCONNECTMSG = UDPS_MSG + 0x2;
 const unsigned short UDPS_SETPOLLRATE = UDPS_MSG + 0x3;
-const unsigned short UDPS_MSGACCEPTED = UDPS_MSG + 0x4;
 const unsigned short UDPS_MAXMSGSIZE = UDPS_MSG + 0x5;
 
 
@@ -179,12 +179,11 @@ void SocketHandler_Sync::SafeDelete(){
 
 /* SocketHandlerUDP_Async class */
 void SocketHandlerUDP_Async::sleepThread(std::chrono::duration<double> pd){
-  std::lock_guard<std::mutex> _lg(m_sleepTime);
-  std::this_thread::sleep_for(pd-sleepTime);
+  std::this_thread::sleep_for(sleepTime-pd);
 }
 
 void SocketHandlerUDP_Async::_QueueMessage(unsigned short code, void *msg, unsigned short msglen){
-  if(_actuallyConnected && (msglen == -1 || msglen <= _maxmsgsize)){
+  if(_actuallyConnected){
     std::lock_guard<std::mutex> _lg(m_messageQueues);
     messageQueues.push(_message{
       .code = code,
@@ -192,22 +191,6 @@ void SocketHandlerUDP_Async::_QueueMessage(unsigned short code, void *msg, unsig
       .msglen = msglen
     });
   }
-  else if(msg != NULL)
-    delete msg;
-}
-
-void SocketHandlerUDP_Async::_sendAccept(){
-  sendto(currSock, reinterpret_cast<const char*>(UDPS_MSGACCEPTED), sizeof(UDPS_MSGACCEPTED), 0, (sockaddr*)&hostAddress, sizeof(hostAddress));
-}
-
-bool SocketHandlerUDP_Async::_isAccepted(){
-  unsigned short msgcode = 0;
-  sockaddr_in curraddr;
-  int curraddrlen = sizeof(curraddr);
-  
-  recvfrom(currSock, reinterpret_cast<char*>(&msgcode), sizeof(msgcode), 0, (sockaddr*)&curraddr, &curraddrlen);
-
-  return hostAddress == curraddr && msgcode == UDPS_MSGACCEPTED;
 }
 
 void SocketHandlerUDP_Async::on_udpdisconnect(){
@@ -217,6 +200,9 @@ void SocketHandlerUDP_Async::on_udpdisconnect(){
     delete messageQueues.front().msg;
     messageQueues.pop();
   }
+
+  printf("listening done.\n");
+  cv_disconnect.notify_all();
 }
 
 void SocketHandlerUDP_Async::on_udppollrate(unsigned char rateHz){
@@ -225,6 +211,7 @@ void SocketHandlerUDP_Async::on_udppollrate(unsigned char rateHz){
 
 void SocketHandlerUDP_Async::on_udpmaxsize(unsigned short maxmsgsize){
   _maxmsgsize = maxmsgsize;
+  printf("max msg size set, %d\n", maxmsgsize);
 }
 
 // at least buffer have length of 4
@@ -233,69 +220,67 @@ void getheadermsg(char* buffer, unsigned short code, void* msglen, int msglensiz
   memcpy(buffer+sizeof(code), msglen, msglensize);
 }
 
+// FIXME the thread won't close, need to fix on what to do when the remote host isn't responding
 void SocketHandlerUDP_Async::udpthreadfunc(){
-  _actuallyConnected = true;
   int _timesNotRespond = 0;
   while(_actuallyConnected){
     auto _stime = std::chrono::high_resolution_clock::now();
 
     // sending the message
     if(messageQueues.size() > 0){
+      printf("sending message.\n");
       while(messageQueues.size() > 0){
-        _timesNotRespond = 0;
+        printf("Message size: %d\n", messageQueues.size());
         _message m;
         {std::lock_guard<std::mutex> _lg(m_messageQueues);
           m = messageQueues.front();
+          if(m.msglen <= _maxmsgsize || _maxmsgsize == -1){
+            printf("msglen: %d\n", m.msglen);
+            // the header format should change based on the code
+            char msghead[SIZEOFMSGHEADER];
+            bool _useMsg = false;
 
-          // the header format should change based on the code
-          char msghead[SIZEOFMSGHEADER];
-          bool _useMsg = false;
-
-          // this is just for what to do for certain msgcode
-          switch(m.code){
-            break; case UDPS_SETPOLLRATE:
-              on_udppollrate(*reinterpret_cast<unsigned char*>(m.msg));
-            break; case UDPS_MAXMSGSIZE:
-              on_udpmaxsize(*reinterpret_cast<unsigned short*>(m.msg));
-          }
+            // this is just for what to do for certain msgcode
+            switch(m.code){
+              break; case UDPS_SETPOLLRATE:
+                on_udppollrate(*reinterpret_cast<unsigned char*>(m.msg));
+                _useMsg = true;
+              break; case UDPS_MAXMSGSIZE:
+                on_udpmaxsize(*reinterpret_cast<unsigned short*>(m.msg));
+                _useMsg = true;
+            }
 
 
-          if(_useMsg)
-            getheadermsg(msghead, m.code, m.msg, m.msglen);
-          else
-            getheadermsg(msghead, m.code, &m.msglen, sizeof(m.msglen));
+            if(_useMsg)
+              getheadermsg(msghead, m.code, m.msg, m.msglen);
+            else
+              getheadermsg(msghead, m.code, &m.msglen, sizeof(m.msglen));
 
-          sendto(currSock, msghead, SIZEOFMSGHEADER, 0, (sockaddr*)&hostAddress, sizeof(hostAddress));
+            sendto(currSock, msghead, SIZEOFMSGHEADER, 0, (sockaddr*)&hostAddress, sizeof(hostAddress));
 
-          if(m.msg != NULL){
-            int msgsent = 0;
-            while(msgsent < m.msglen){
-              int packetlen = std::min(m.msglen-msgsent, MAX_SOCKETPACKETSIZE);
-              sendto(currSock, reinterpret_cast<char*>(m.msg+msgsent), packetlen, 0, (sockaddr*)&hostAddress, sizeof(hostAddress));
+            if(m.msg != NULL){
+              int msgsent = 0;
+              while(msgsent < m.msglen){
+                int packetlen = std::min(m.msglen-msgsent, MAX_SOCKETPACKETSIZE);
+                sendto(currSock, reinterpret_cast<char*>(m.msg+msgsent), packetlen, 0, (sockaddr*)&hostAddress, sizeof(hostAddress));
 
-              msgsent += packetlen;
+                msgsent += packetlen;
+              }
             }
           }
 
-          if(_isAccepted()){
-            _timesNotRespond = 0;
+          if(m.msg != NULL)
+            delete m.msg;
+          messageQueues.pop();
 
-            if(m.msg != NULL)
-              delete m.msg;
-            messageQueues.pop();
-
-            if(m.code == UDPS_DISCONNECTMSG){
-              on_udpdisconnect();
-              return;
-            }
-          }
-          else if(++_timesNotRespond > MAXTIMESRESPUDP){
+          if(m.code == UDPS_DISCONNECTMSG){
             on_udpdisconnect();
             return;
           }
         }
       }
 
+      printf("End of bulk message.\n");
       sendto(currSock, reinterpret_cast<const char*>(&EOBULKMSG), sizeof(EOBULKMSG), 0, (sockaddr*)&hostAddress, sizeof(sockaddr_in)); 
     }
     else{
@@ -309,9 +294,12 @@ void SocketHandlerUDP_Async::udpthreadfunc(){
     unsigned short msgcode = 0;
 
     // receiving the message
-    while(msgcode != EOBULKMSG){
+    bool keepRecv = true;
+    while(keepRecv){
+      int packetLength = recvfrom(currSock, headercode, SIZEOFMSGHEADER, 0, (sockaddr*)&curraddr, &sockaddr_inlen);
+
       _timesNotRespond = 0;
-      while(curraddr != hostAddress){
+      while(packetLength <= 0 && curraddr != hostAddress){
         recvfrom(currSock, headercode, SIZEOFMSGHEADER, 0, (sockaddr*)&curraddr, &sockaddr_inlen);
 
         if(++_timesNotRespond > MAXTIMESRESPUDP){
@@ -363,20 +351,18 @@ void SocketHandlerUDP_Async::udpthreadfunc(){
           }
 
           callback(msgbuffer, msglen);
+          delete msgbuffer;
         }
 
-        break; case PINGMESSAGE:
-          ;
-
-        break; case EOBULKMSG:
-          ;
+        break;
+        case PINGMESSAGE:
+        case EOBULKMSG:
+          keepRecv = false;
       }
-
-      _sendAccept();
     }
 
     auto __ftime = std::chrono::high_resolution_clock::now();
-    sleepThread(_stime - __ftime);
+    sleepThread(__ftime - _stime);
   }
 }
 
@@ -395,6 +381,7 @@ SocketHandlerUDP_Async::~SocketHandlerUDP_Async(){
 
 bool SocketHandlerUDP_Async::StartConnecting(const char *ipaddress, unsigned short port){
   if(!_actuallyConnected){
+    printf("Trying to connect....\n");
     hostAddress.sin_addr.S_un.S_addr = inet_addr(ipaddress);
     hostAddress.sin_family = AF_INET;
     hostAddress.sin_port = htons(port);
@@ -402,11 +389,13 @@ bool SocketHandlerUDP_Async::StartConnecting(const char *ipaddress, unsigned sho
 
     bool connected = false;
     for(int i = 0; i < 5; i++){
+      printf("tries: %d\n", i);
       auto _stime = std::chrono::high_resolution_clock::now();
-      int sockaddrlen = sizeof(sockaddr_in);
-      sendto(currSock, reinterpret_cast<const char*>(UDPS_CONNECTMSG), sizeof(unsigned short), 0, (sockaddr*)&hostAddress, sockaddrlen);
-      unsigned short message = 0;
 
+      int sockaddrlen = sizeof(sockaddr_in);
+      sendto(currSock, reinterpret_cast<const char*>(&UDPS_CONNECTMSG), sizeof(unsigned short), 0, (sockaddr*)&hostAddress, sockaddrlen);
+
+      unsigned short message = 0;
       sockaddr_in curraddr;
       int curraddrlen = sizeof(sockaddr_in);
       recvfrom(currSock, reinterpret_cast<char*>(&message), sizeof(unsigned short), 0, (sockaddr*)&curraddr, &curraddrlen);
@@ -416,6 +405,7 @@ bool SocketHandlerUDP_Async::StartConnecting(const char *ipaddress, unsigned sho
         sleepThread(_fitime - _stime);
       }
       else{
+        _actuallyConnected = true;
         connected = true;
         break;
       }
@@ -431,8 +421,11 @@ bool SocketHandlerUDP_Async::StartConnecting(const char *ipaddress, unsigned sho
 }
 
 void SocketHandlerUDP_Async::QueueMessage(char* msg, int len){
-  if(_actuallyConnected)
+  if(_actuallyConnected){
+    printf("queuing message\n");
+
     _QueueMessage(SENDMESSAGE, msg, len);
+  }
 }
 
 // the poll rate sets after it the message has been sent
@@ -451,6 +444,13 @@ void SocketHandlerUDP_Async::SetCallback_disconnect(SocketCallbackvoid cb){
   cbOnDisconnected = cb;
 }
 
+void SocketHandlerUDP_Async::WaitUntilDisconnect(){
+  if(_actuallyConnected){
+    std::unique_lock<std::mutex> lkDc{m_onDisconnect};
+    cv_disconnect.wait(lkDc);
+    printf("done waiting.\n");
+  }
+}
 
 // the reason why it needs to queue, not full force, is to send all the data first, then disconnect
 void SocketHandlerUDP_Async::Disconnect(){

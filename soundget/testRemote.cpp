@@ -26,7 +26,7 @@ sockaddr_in *hostAddress = new sockaddr_in();
 int main(){
   initSocket();
 
-  hostAddress->sin_addr.S_un.S_addr = inet_addr("192.168.185.227");
+  hostAddress->sin_addr.S_un.S_addr = inet_addr("192.168.76.227");
   hostAddress->sin_family = AF_INET;
   hostAddress->sin_port = htons(port);
 

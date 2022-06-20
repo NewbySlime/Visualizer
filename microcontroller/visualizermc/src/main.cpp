@@ -1,46 +1,71 @@
-#include <Arduino.h>
 #include "SPI.h"
 #include "Wire.h"
+#include <Arduino.h>
 #include "ESP8266WiFi.h"
-#include "ESP8266WebServer.h"
 #include "WiFiUdp.h"
+
+#include "timer.hpp"
 
 #include "Adafruit_GFX.h"
 #include "Adafruit_SSD1306.h"
-#include "ESP8266TimerInterrupt.h"
-#include "ESP8266_ISR_Timer.hpp"
 #include "FastLED.h"
 #include "serialEEPROM.h"
 
 #include "string"
 #include "cmath"
 
+#include "socket_udp.hpp"
+#include "ByteIterator.hpp"
+
 using namespace std;
 
-#define CONNECTION_UDP 0
-#define CONNECTION_TCP 1
-#define CONNECTION_WEB 2
-
+#define USEPORT 3020
 #define MAX_23BIT 0x7FFFFF
-
-#define CURRENTCONNECTION CONNECTION_UDP
 
 
 // Note: i don't know how to get packet size, so each packet has header packet (size 4 bytes)
 // as the size of data packet
 
-
 string ssid = ".o.";
 string password = "QbllolymLtoRiwqieCRIrzwCr";
 
-void udp_onsetup();
-void udp_onupdate();
+const unsigned short DO_TEST = 0x3;
+const unsigned short DO_MTPLY = 0x4;
+void callbacksock(const char *buf, int buflen){
+  if(buflen >= sizeof(unsigned short)){
+    ByteIterator _bi{buf, buflen};
+    unsigned short msgcode = 0;
+    Serial.printf("msgcode: 0x%X\n", msgcode);
 
-void tcp_onsetup();
-void tcp_onupdate();
+    _bi.getVar(msgcode);
+    Serial.printf("msgcode msg %d\n", msgcode);
+    switch(msgcode){
+      break; case DO_TEST:{
+        Serial.printf("Sending test message.\n");
+        char teststr[] = "Hello from esp8266!";
+        char *strbuf = new char[sizeof(teststr)];
+        memcpy(strbuf, teststr, sizeof(teststr));
+        udpSock.queue_data(strbuf, sizeof(teststr));
+      }
 
-void web_onsetup();
-void tcp_onupdate();
+      break; case DO_MTPLY:{
+        int i1 = 0;
+        int i2 = 0;
+
+        _bi.getVar(i1);
+        _bi.getVar(i2);
+
+        int res = i1*i2;
+        Serial.printf("result: %d\n", res);
+        string resstr = to_string(res);
+        char *buffer = new char[resstr.length()+1];
+        buffer[resstr.length()] = '\0';
+        memcpy(buffer, resstr.c_str(), resstr.length());
+        udpSock.queue_data(buffer, resstr.length());
+      }
+    }
+  }
+}
 
 void setup() {
   Serial.begin(9600);
@@ -60,92 +85,10 @@ void setup() {
   Serial.print("Local IP: ");
   Serial.println(locip.toString());
 
-  #if CURRENTCONNECTION == CONNECTION_UDP
-    udp_onsetup();
-  #elif CURRENTCONNECTION == CONNECTION_TCP
-    tcp_onsetup();
-  #elif CURRENTCONNECTION == CONNECTION_WEB
-    web_onsetup();
-  #endif
-
-  timer1_enable(1, 0, true);
-  timer1_attachInterrupt(onInterrupt);
-  timer1_write(timer_getTimerStartValue(MAX_23BIT, 1, (double)1/60));
-  timer1_isr_init();
+  udpSock.set_callback(callbacksock);
+  udpSock.startlistening(USEPORT);
 }
 
 void loop() {
-  ESP8266Timer timer;
-  ESP8266_ISR_Timer isr_timer;
+  timer_update();
 }
-
-
-#if CURRENTCONNECTION == CONNECTION_UDP
-WiFiUDP wudp;
-void udp_onsetup(){
-  wudp.begin(3020);
-}
-
-void udp_onupdate(){
-  int packetSize = wudp.parsePacket();
-  if(packetSize > 0){
-    IPAddress ipad = wudp.remoteIP();
-    unsigned short remport = wudp.remotePort();
-    //Serial.println("Packet received.");
-    //Serial.printf("Packet Length: %d\n", packetSize);
-    char *str = new char[packetSize+1];
-    wudp.read(str, packetSize);
-    str[packetSize] = '\0';
-    //Serial.println(str);
-
-    //Serial.printf("incoming ip address: %s\n", ipad.toString().c_str());
-    //Serial.printf("incoming port: %d\n", remport);
-    string strs = "hello from esp8266!";
-
-    wudp.beginPacket(ipad, remport);
-    int strslen = strs.length();
-    wudp.write(reinterpret_cast<char*>(&strslen), sizeof(int));
-    wudp.endPacket();
-
-    wudp.beginPacket(ipad, remport);
-    wudp.write(strs.c_str(), strs.length());
-    wudp.endPacket();
-
-    //Serial.println("Packet sent.");
-  }
-}
-
-
-#elif CURRENTCONNECTION == CONNECTION_TCP
-WiFiServer server(3020);
-WiFiClient currentclient;
-void tcp_onsetup(){
-  server.begin();
-  while(!currentclient){
-    Serial.println("Waiting for socket...");
-    currentclient = server.available();
-    if(currentclient.connected()){
-      Serial.println("Connected");
-      
-    }
-    delay(1000);
-  }
-
-  Serial.println("Socket connected!");
-}
-
-void tcp_onupdate(){
-  Serial.println("Waiting for a message...");
-  currentclient.read();
-}
-
-
-#elif CURRENTCONNECTION == CONNECTION_WEB
-void web_onsetup(){
-
-}
-
-void web_onupdate(){
-
-}
-#endif

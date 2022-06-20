@@ -12,7 +12,7 @@ storage_AT24C16::storage_AT24C16(uint8_t address){
 
 int storage_AT24C16::write_nodelay(uint16_t memaddr, const void* buffer, int bufferlen){
   if(memaddr > _max_storage)
-    return;
+    return -1;
 
   bufferlen = (bufferlen+memaddr)>_max_storage? _max_storage-memaddr: bufferlen;
   uint8_t blockaddr = (memaddr >> 8) & 0b111;
@@ -50,7 +50,7 @@ int storage_AT24C16::write(uint16_t memaddr, const void* buffer, int bufferlen){
 
 int storage_AT24C16::read(uint16_t memaddr, void* buffer, int bufferlen){
   if(memaddr > _max_storage)
-    return;
+    return -1;
 
   bufferlen = (bufferlen+memaddr)>_max_storage? _max_storage-memaddr: bufferlen;
   uint8_t blockaddr = (memaddr > 8) & 0b111;
