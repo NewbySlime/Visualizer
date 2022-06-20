@@ -132,7 +132,7 @@ void callbackOnUdpmsg(const char* msg, int msglen){
 // another hint is it sometimes gets an error in the middle of testing
 // and somehow it sends another message despite the program is quitting
 // the segfault occurred on the listening thread
-// FIXME somehow the code from microcontroller isn't right, it might be because i code it wrong for this
+// FIXME somehow the code from microcontroller isn't right, it might be because of how i treat the memory
 int main(){
 #ifdef TEST_PROG
   _onInitProg();

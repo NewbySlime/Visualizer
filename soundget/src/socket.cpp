@@ -1,5 +1,6 @@
 #include "socket.hpp"
 #include "initquit.hpp"
+#include "ByteIterator.hpp"
 
 #include "stdio.h"
 
@@ -27,7 +28,10 @@ const unsigned short UDPS_DISCONNECTMSG = UDPS_MSG + 0x2;
 const unsigned short UDPS_SETPOLLRATE = UDPS_MSG + 0x3;
 const unsigned short UDPS_MAXMSGSIZE = UDPS_MSG + 0x5;
 
-
+TIMEVAL _sockudp_timeout = {
+  .tv_sec = 0,
+  .tv_usec = 100000 // 100 ms
+};
 
 WSAData *wsadat = new WSAData();
 
@@ -220,7 +224,6 @@ void getheadermsg(char* buffer, unsigned short code, void* msglen, int msglensiz
   memcpy(buffer+sizeof(code), msglen, msglensize);
 }
 
-// FIXME the thread won't close, need to fix on what to do when the remote host isn't responding
 void SocketHandlerUDP_Async::udpthreadfunc(){
   int _timesNotRespond = 0;
   while(_actuallyConnected){
@@ -236,6 +239,8 @@ void SocketHandlerUDP_Async::udpthreadfunc(){
           m = messageQueues.front();
           if(m.msglen <= _maxmsgsize || _maxmsgsize == -1){
             printf("msglen: %d\n", m.msglen);
+
+
             // the header format should change based on the code
             char msghead[SIZEOFMSGHEADER];
             bool _useMsg = false;
@@ -296,20 +301,26 @@ void SocketHandlerUDP_Async::udpthreadfunc(){
     // receiving the message
     bool keepRecv = true;
     while(keepRecv){
-      int packetLength = recvfrom(currSock, headercode, SIZEOFMSGHEADER, 0, (sockaddr*)&curraddr, &sockaddr_inlen);
+      int packetLength = 0;
 
-      _timesNotRespond = 0;
-      while(packetLength <= 0 && curraddr != hostAddress){
-        recvfrom(currSock, headercode, SIZEOFMSGHEADER, 0, (sockaddr*)&curraddr, &sockaddr_inlen);
+      do{
+        fd_set sockset;
+        FD_ZERO(&sockset);
+        FD_SET(currSock, &sockset);
 
-        if(++_timesNotRespond > MAXTIMESRESPUDP){
+        select(0, &sockset, NULL, NULL, &_sockudp_timeout);
+        if(FD_ISSET(currSock, &sockset))
+          packetLength = recvfrom(currSock, headercode, SIZEOFMSGHEADER, 0, (sockaddr*)&curraddr, &sockaddr_inlen);
+        else if(++_timesNotRespond > MAXTIMESRESPUDP){
           on_udpdisconnect();
           return;
         }
       }
+      while(packetLength <= 0 || curraddr != hostAddress);
 
       _timesNotRespond = 0;
       msgcode = *reinterpret_cast<unsigned short*>(headercode);
+      printf("get msgcode: 0x%X\n", msgcode);
       switch(msgcode){
         break; case UDPS_DISCONNECTMSG:
           on_udpdisconnect();
@@ -333,21 +344,28 @@ void SocketHandlerUDP_Async::udpthreadfunc(){
           int curraddrlen = sizeof(sockaddr_in);
 
           while(msgread < msglen){
-            int packetlen = recvfrom(currSock, buffer, MAX_SOCKETPACKETSIZE, 0, (sockaddr*)&curraddr, &curraddrlen);
+            fd_set sockset;
+            FD_ZERO(&sockset);
+            FD_SET(currSock, &sockset);
 
-            if(curraddr != hostAddress){
-              if(++_timesNotRespond > MAXTIMESRESPUDP){
-                on_udpdisconnect();
-                delete msgbuffer;
-                return;
+            select(0, &sockset, NULL, NULL, &_sockudp_timeout);
+
+            packetLength = 0;
+            if(FD_ISSET(currSock, &sockset)){
+              packetLength = recvfrom(currSock, buffer, MAX_SOCKETPACKETSIZE, 0, (sockaddr*)&curraddr, &curraddrlen);
+
+              if(curraddr == hostAddress){
+                _timesNotRespond = 0;
+                memcpy(msgbuffer+msgread, buffer, packetLength);
+                msgread += packetLength;
               }
-
-              continue;
+            }
+            else if(++_timesNotRespond > MAXTIMESRESPUDP){
+              on_udpdisconnect();
+              delete msgbuffer;
+              return;
             }
 
-            _timesNotRespond = 0;
-            memcpy(msgbuffer+msgread, buffer, packetlen);
-            msgread += packetlen;
           }
 
           callback(msgbuffer, msglen);
