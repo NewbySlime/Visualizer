@@ -12,7 +12,7 @@ class ByteIterator{
     
 
   public:
-    ByteIterator(const char *data, size_t datalength);
+    ByteIterator(const void *data, size_t datalength);
     
     template<typename _type> void getVar(_type &variable);
 
@@ -34,7 +34,7 @@ class ByteIteratorR{
     ByteIteratorR(void *buffer, size_t datalength);
 
     // if successful, it'll return true
-    template<typename _type> bool setVar(_type &variable);
+    template<typename _type> bool setVar(_type variable);
 
     size_t setVar(void *data, size_t datalength){
       return setVar(reinterpret_cast<const char*>(data), datalength);

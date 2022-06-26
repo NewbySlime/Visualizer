@@ -205,7 +205,6 @@ void SocketHandlerUDP_Async::on_udpdisconnect(){
     messageQueues.pop();
   }
 
-  printf("listening done.\n");
   cv_disconnect.notify_all();
 }
 
@@ -215,7 +214,6 @@ void SocketHandlerUDP_Async::on_udppollrate(unsigned char rateHz){
 
 void SocketHandlerUDP_Async::on_udpmaxsize(unsigned short maxmsgsize){
   _maxmsgsize = maxmsgsize;
-  printf("max msg size set, %d\n", maxmsgsize);
 }
 
 // at least buffer have length of 4
@@ -231,43 +229,46 @@ void SocketHandlerUDP_Async::udpthreadfunc(){
 
     // sending the message
     if(messageQueues.size() > 0){
-      printf("sending message.\n");
       while(messageQueues.size() > 0){
-        printf("Message size: %d\n", messageQueues.size());
         _message m;
         {std::lock_guard<std::mutex> _lg(m_messageQueues);
           m = messageQueues.front();
           if(m.msglen <= _maxmsgsize || _maxmsgsize == -1){
-            printf("msglen: %d\n", m.msglen);
-
 
             // the header format should change based on the code
             char msghead[SIZEOFMSGHEADER];
             bool _useMsg = false;
 
+            ByteIterator _bimsg{m.msg, (size_t)m.msglen};
+            ByteIteratorR _bimsgheader{msghead, SIZEOFMSGHEADER};
+
             // this is just for what to do for certain msgcode
             switch(m.code){
-              break; case UDPS_SETPOLLRATE:
-                on_udppollrate(*reinterpret_cast<unsigned char*>(m.msg));
+              break; case UDPS_SETPOLLRATE:{
+                unsigned char pollrate = 0; _bimsg.getVar(pollrate);
+                on_udppollrate(pollrate);
                 _useMsg = true;
+              }
+
               break; case UDPS_MAXMSGSIZE:
-                on_udpmaxsize(*reinterpret_cast<unsigned short*>(m.msg));
+                unsigned short msgsize = 0; _bimsg.getVar(msgsize);
+                on_udpmaxsize(msgsize);
                 _useMsg = true;
             }
 
-
+            _bimsgheader.setVar(m.code);
             if(_useMsg)
-              getheadermsg(msghead, m.code, m.msg, m.msglen);
+              _bimsgheader.setVar(m.msg, m.msglen);
             else
-              getheadermsg(msghead, m.code, &m.msglen, sizeof(m.msglen));
+              _bimsgheader.setVar(m.msglen);
 
             sendto(currSock, msghead, SIZEOFMSGHEADER, 0, (sockaddr*)&hostAddress, sizeof(hostAddress));
 
-            if(m.msg != NULL){
+            if(!_useMsg && m.msg != NULL){
               int msgsent = 0;
               while(msgsent < m.msglen){
                 int packetlen = std::min(m.msglen-msgsent, MAX_SOCKETPACKETSIZE);
-                sendto(currSock, reinterpret_cast<char*>(m.msg+msgsent), packetlen, 0, (sockaddr*)&hostAddress, sizeof(hostAddress));
+                sendto(currSock, reinterpret_cast<char*>(m.msg)+msgsent, packetlen, 0, (sockaddr*)&hostAddress, sizeof(hostAddress));
 
                 msgsent += packetlen;
               }
@@ -284,8 +285,7 @@ void SocketHandlerUDP_Async::udpthreadfunc(){
           }
         }
       }
-
-      printf("End of bulk message.\n");
+      
       sendto(currSock, reinterpret_cast<const char*>(&EOBULKMSG), sizeof(EOBULKMSG), 0, (sockaddr*)&hostAddress, sizeof(sockaddr_in)); 
     }
     else{
@@ -318,26 +318,32 @@ void SocketHandlerUDP_Async::udpthreadfunc(){
       }
       while(packetLength <= 0 || curraddr != hostAddress);
 
+      ByteIterator _bimsgheader{headercode, packetLength};
+
       _timesNotRespond = 0;
-      msgcode = *reinterpret_cast<unsigned short*>(headercode);
-      printf("get msgcode: 0x%X\n", msgcode);
+      _bimsgheader.getVar(msgcode);
       switch(msgcode){
         break; case UDPS_DISCONNECTMSG:
           on_udpdisconnect();
           return;
 
         break; case UDPS_SETPOLLRATE:{
-          on_udppollrate(*reinterpret_cast<unsigned char*>(headercode+sizeof(unsigned short)));
+          unsigned short pollrate = 0;
+          _bimsgheader.getVar(pollrate);
+          on_udppollrate(pollrate);
         }
 
         break; case UDPS_MAXMSGSIZE:{
-          on_udpmaxsize(*reinterpret_cast<unsigned short*>(headercode+sizeof(unsigned short)));
+          unsigned short msgsize = 0;
+          _bimsgheader.getVar(msgsize);
+          on_udpmaxsize(msgsize);
         }
 
         break; case SENDMESSAGE:{
-          unsigned short msglen = *reinterpret_cast<unsigned short*>(headercode+sizeof(unsigned short));
+          unsigned short msglen = 0;
+          _bimsgheader.getVar(msglen);
+
           char *msgbuffer = new char[msglen];
-          char buffer[MAX_SOCKETPACKETSIZE];
           
           int msgread = 0;
           sockaddr_in curraddr;
@@ -352,11 +358,10 @@ void SocketHandlerUDP_Async::udpthreadfunc(){
 
             packetLength = 0;
             if(FD_ISSET(currSock, &sockset)){
-              packetLength = recvfrom(currSock, buffer, MAX_SOCKETPACKETSIZE, 0, (sockaddr*)&curraddr, &curraddrlen);
+              packetLength = recvfrom(currSock, msgbuffer+msgread, MAX_SOCKETPACKETSIZE, 0, (sockaddr*)&curraddr, &curraddrlen);
 
               if(curraddr == hostAddress){
                 _timesNotRespond = 0;
-                memcpy(msgbuffer+msgread, buffer, packetLength);
                 msgread += packetLength;
               }
             }
@@ -440,8 +445,6 @@ bool SocketHandlerUDP_Async::StartConnecting(const char *ipaddress, unsigned sho
 
 void SocketHandlerUDP_Async::QueueMessage(char* msg, int len){
   if(_actuallyConnected){
-    printf("queuing message\n");
-
     _QueueMessage(SENDMESSAGE, msg, len);
   }
 }

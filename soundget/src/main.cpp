@@ -1,6 +1,7 @@
 #include "socket.hpp"
 #include "soundget.hpp"
 #include "initquit.hpp"
+#include "ByteIterator.hpp"
 #include "conio.h"
 #include "map"
 #include "exception"
@@ -118,21 +119,29 @@ void SendFreqDataToMC(const float* amp, int length, const WAVEFORMATEX *wavform)
 #ifdef TEST_PROG
 unsigned short DO_TEST = 0x3;
 unsigned short DO_MTPLY = 0x4;
+int DO_MTPLY_sizemsg = sizeof(unsigned short)+sizeof(int)+sizeof(int);
 
 SocketHandlerUDP_Async sockudp;
 
+int timestesting = 50;
 void callbackOnUdpmsg(const char* msg, int msglen){
   printf("Message incoming: %s\n", msg);
+
+  if(timestesting-- > 0){
+    printf("\nTesting num %d\n", timestesting);
+    char *data = new char[DO_MTPLY_sizemsg];
+    ByteIteratorR _bidata{data, DO_MTPLY_sizemsg};
+
+    _bidata.setVar(DO_MTPLY);
+    _bidata.setVar(rand() % 1000);
+    _bidata.setVar(rand() % 1000);
+
+    sockudp.QueueMessage(data, DO_MTPLY_sizemsg);
+  }
 }
 #endif
 
 
-// TODO add a data iterator for getting data out of raw variables
-// FIXME i might did a segfault, since it randomly gets an error
-// another hint is it sometimes gets an error in the middle of testing
-// and somehow it sends another message despite the program is quitting
-// the segfault occurred on the listening thread
-// FIXME somehow the code from microcontroller isn't right, it might be because of how i treat the memory
 int main(){
 #ifdef TEST_PROG
   _onInitProg();
@@ -143,7 +152,6 @@ int main(){
   sockudp.SetCallback(callbackOnUdpmsg);
   if(sockudp.StartConnecting("192.168.76.227", 3020)){
     printf("Sending message\n");
-    // TODO somehow this makes the microcontroller doo doo
     unsigned short *testcode = new unsigned short(DO_TEST);
     sockudp.QueueMessage(reinterpret_cast<char*>(testcode), sizeof(unsigned short));
   }

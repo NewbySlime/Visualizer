@@ -44,7 +44,7 @@ template<typename _type> bool ByteIteratorR::setVar(_type &variable){
 
 size_t ByteIteratorR::setVar(const char *data, size_t datalength){
   size_t writelen = min(datalength, _datalength-_dataidx);
-  memcpy(_data, data, writelen);
+  memcpy(_data+_dataidx, data, writelen);
 
   _dataidx += writelen;
   return writelen;

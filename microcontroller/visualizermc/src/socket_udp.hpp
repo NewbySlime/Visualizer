@@ -69,7 +69,8 @@ class SocketUDP{
     // free the data after use
     void set_callback(SocketUDP_Callback callback);
 
-    // don't delete data, since it uses pointer of the buffer, not the content of the buffer
+    // use malloc or the quite instead of new
+    // don't free data, since it uses pointer of the buffer, not the content of the buffer
     void queue_data(char* data, unsigned short datalength);
 };
 

@@ -1,0 +1,87 @@
+��data from eeprom: Testing one two ��������������
+test 0
+test1 16
+test3
+Testing one two three four.
+test3
+test3
+test3
+test 16
+test2
+test 0
+test1 30
+test3
+Testing one two three four.
+test3
+test3
+test3
+test 30
+test2
+
+--------------- CUT HERE FOR EXCEPTION DECODER ---------------
+
+Exception (2):
+epc1=0x3ffefd8c epc2=0x00000000 epc3=0x00000000 excvaddr=0x3ffefd8c depc=0x00000000
+
+>>>stack>>>
+
+ctx: cont
+sp: 3ffffde0 end: 3fffffc0 offset: 0190
+3fffff70:  00000000 3ffefb70 0000011a 3ffefd8c  
+3fffff80:  0000001e 0000001e 00000001 3ffeebb8  
+3fffff90:  3fffdad0 00000000 3ffeeba4 40201508  
+3fffffa0:  3fffdad0 00000000 3ffeeba4 402035c0  
+3fffffb0:  feefeffe feefeffe 3ffe85e0 40101329  
+<<<stack<<<
+
+--------------- CUT HERE FOR EXCEPTION DECODER ---------------
+
+
+
+--- Miniterm on COM7  9600,8,N,1 ---
+--- Quit: Ctrl+C | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H ---
+��test 0
+test1 16
+test 16 
+test2   
+done delaying
+test 16      
+test1 12     
+test 28
+
+User exception (panic/abort/assert)
+--------------- CUT HERE FOR EXCEPTION DECODER ---------------
+
+Panic umm_malloc.cpp:229 umm_get_ptr_context
+
+>>>stack>>>
+
+ctx: cont
+sp: 3ffffec0 end: 3fffffc0 offset: 0000
+3ffffec0:  3ffffe68 3fffff50 3fffff50 4020177c  
+3ffffed0:  000000fe 00000000 00000000 00000000  
+3ffffee0:  00000000 00000000 00000000 3ffeebdc  
+3ffffef0:  3ffffeb8 00000001 00000008 3ffe87d8  
+3fffff00:  3ffeeb0c 00000020 40201801 40203866  
+3fffff10:  3ffffeb9 00000001 3ffefb44 402038d3  
+3fffff20:  3ffeeb0c 3ffe87d8 3fffff30 40100e9c <
+3fffff30:  40203f69 000007d0 3ffeeb98 40100f9d  
+3fffff40:  3ffeeb0c 0000000c 3fffff50 40201133 <
+
+0x4020177c in timer_setTimeout(unsigned long, void (*)(void*), void*) at ??:?
+0x40201801 in timer_update() at ??:?
+0x40203866 in raise_exception at core_esp8266_postmortem.cpp:?
+0x402038d3 in __panic_func at ??:?
+0x40203f69 in __delay at ??:?
+0x40100f9d in free at ??:?
+
+3fffff50:  3ffefb44 00000008 3ffefb78 00000001  
+3fffff60:  00000001 3ffee6a4 00000000 402012d0  
+3fffff70:  3ffefd64 3ffefb50 00000030 40201801  
+3fffff80:  0000001c 0000001c feef0101 3ffeeb98  
+3fffff90:  3fffdad0 00000000 3ffeeb84 402013e0  
+3fffffa0:  3fffdad0 00000000 3ffeeb84 402033fc  
+3fffffb0:  feefeffe feefeffe 3ffe85e0 40101329  
+<<<stack<<<
+
+--------------- CUT HERE FOR EXCEPTION DECODER ---------------

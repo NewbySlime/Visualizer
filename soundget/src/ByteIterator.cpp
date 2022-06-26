@@ -2,9 +2,9 @@
 #include "algorithm"
 #include "string.h"
 
-ByteIterator::ByteIterator(const char *data, size_t datalength){
+ByteIterator::ByteIterator(const void *data, size_t datalength){
   _datalength = datalength;
-  _data = data;
+  _data = reinterpret_cast<const char*>(data);
   _dataidx = 0;
 }
 
@@ -27,6 +27,7 @@ size_t ByteIterator::getVar(char *buf, size_t buflen){
 template void ByteIterator::getVar<float>(float&);
 template void ByteIterator::getVar<int>(int&);
 template void ByteIterator::getVar<unsigned short>(unsigned short&);
+template void ByteIterator::getVar<unsigned char>(unsigned char&);
 
 
 ByteIteratorR::ByteIteratorR(void *buf, size_t datalength){
@@ -35,7 +36,7 @@ ByteIteratorR::ByteIteratorR(void *buf, size_t datalength){
   _dataidx = 0;
 }
 
-template<typename _type> bool ByteIteratorR::setVar(_type &variable){
+template<typename _type> bool ByteIteratorR::setVar(_type variable){
   if((_dataidx+sizeof(_type)) > _datalength)
     return false;
 
@@ -46,12 +47,14 @@ template<typename _type> bool ByteIteratorR::setVar(_type &variable){
 
 size_t ByteIteratorR::setVar(const char *data, size_t datalength){
   size_t writelen = min(datalength, _datalength-_dataidx);
-  memcpy(_data, data, writelen);
+  if(writelen > 0){
+    memcpy(_data+_dataidx, data, writelen);
+    _dataidx += writelen;
+  }
 
-  _dataidx += writelen;
   return writelen;
 }
 
-template bool ByteIteratorR::setVar<float>(float&);
-template bool ByteIteratorR::setVar<int>(int&);
-template bool ByteIteratorR::setVar<unsigned short>(unsigned short&);
+template bool ByteIteratorR::setVar<float>(float);
+template bool ByteIteratorR::setVar<int>(int);
+template bool ByteIteratorR::setVar<unsigned short>(unsigned short);

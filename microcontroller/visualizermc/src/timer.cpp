@@ -1,5 +1,4 @@
 #include "timer.hpp"
-#include "vector"
 
 #include "ESP8266TimerInterrupt.h"
 #include "ESP8266_ISR_Timer.h"
@@ -8,15 +7,23 @@ ESP8266TimerInterrupt Timer;
 ESP8266_ISR_Timer ISR_Timer;
 
 
-std::vector<TimerCallbackArg> cbcont;
-std::vector<int*> idcont;
-std::vector<void*> cobjcont;
+TimerCallbackArg cbcont[MAX_NUMBER_TIMERS];
+void* cobjcont[MAX_NUMBER_TIMERS];
+int* idcont[MAX_NUMBER_TIMERS] = {NULL};
 volatile unsigned short _flags = 0;
+volatile unsigned short _deleteFlags = 0;
 
 // this should only raise the flag
 void IRAM_ATTR _onTimeout(void *param){
   int idtimer = *(int*)param;
   _flags |= (1 << idtimer);
+}
+
+void IRAM_ATTR _onTimeoutT(void *param){
+  int idtimer = *(int*)param;
+
+  _flags |= (1 << idtimer);
+  _deleteFlags |= (1 << idtimer);
 }
 
 int timer_setInterval(unsigned long delay, TimerCallbackArg cb, void *cobj){
@@ -27,7 +34,23 @@ int timer_setInterval(unsigned long delay, TimerCallbackArg cb, void *cobj){
     cobjcont[*idTimer] = cobj;
     idcont[*idTimer] = idTimer;
   }
+  else
+    delete idTimer;
 
+  return *idTimer;
+}
+
+int timer_setTimeout(unsigned long delay, TimerCallbackArg cb, void *cobj){
+  int *idTimer = new int();
+  *idTimer = ISR_Timer.setTimeout(delay, _onTimeoutT, idTimer);
+  if(*idTimer >= 0){
+    cbcont[*idTimer] = cb;
+    cobjcont[*idTimer] = cobj;
+    idcont[*idTimer] = idTimer;
+  }
+  else
+    delete idTimer;
+  
   return *idTimer;
 }
 
@@ -38,7 +61,6 @@ bool timer_changeInterval(unsigned int timer_id, unsigned long delay){
 void timer_deleteTimer(unsigned int timer_id){
   if(timer_id < MAX_NUMBER_TIMERS){
     ISR_Timer.deleteTimer(timer_id);
-    cobjcont[timer_id] = NULL;
 
     if(idcont[timer_id] != NULL){
       delete idcont[timer_id];
@@ -57,6 +79,12 @@ void timer_update(){
         cbcont[i](cobjcont[i]);
         _flags &= ~(1 << i);   
       }
+
+      if((_deleteFlags & (1 << i)) > 0){
+        delete idcont[i];
+        idcont[i] = NULL;
+        _deleteFlags &= ~(1 << i);
+      }
     }
   }
 }
@@ -67,9 +95,6 @@ void IRAM_ATTR _onInterval(){
 }
 
 int timer_init(){
-  idcont.resize(MAX_NUMBER_TIMERS, NULL);
-  cbcont.resize(MAX_NUMBER_TIMERS);
-  cobjcont.resize(MAX_NUMBER_TIMERS, NULL);
   Timer.attachInterruptInterval(1000, _onInterval);
   return 0;
 }

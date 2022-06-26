@@ -59,10 +59,8 @@ void SoundGet::_ThreadUpdate(){
       DWORD flags;
       pCaptureClient->GetBuffer(&pData, &numFramesAvailable, &flags, NULL, NULL);
 
-      // TODO the delay is pretty big (it might have to do when sending to the socket)
-      // somehow printing out the audio data seems to fix it
-      // it might have to do with the timing
-      // the socket might overloaded
+      // TODO the delay is pretty big (maybe the cause of it was reading small portion of the audio data, hence the delay)
+      // i might need to use all up, but it might need fft
       int freqbinlen = (int)round(
           (double)numFramesAvailable
           *0.5f

@@ -171,7 +171,7 @@ void SocketUDP::_onTimer(){
         wifiudp.write(msgheader, SIZEOFMSGHEADER);
         wifiudp.endPacket();
 
-        if(msgdat.buffer != NULL){
+        if(!_useMsg && msgdat.buffer != NULL){
           int msgsent = 0;
           while(msgsent < msgdat.bufferlen){
             int packetlen = min(msgdat.bufferlen-msgsent, MAX_UDPPACKETLEN);
@@ -184,7 +184,7 @@ void SocketUDP::_onTimer(){
         }
 
         if(msgdat.buffer != NULL){
-          delete msgdat.buffer;
+          free(msgdat.buffer);
           msgdat.buffer = NULL;
         }
 
@@ -233,7 +233,7 @@ void SocketUDP::_onUdpDisconnect(){
 
   for(size_t i = 0; i < appendedMessages.size(); i++)
     if(appendedMessages[i].buffer != NULL)
-      delete appendedMessages[i].buffer;
+      free(appendedMessages[i].buffer);
 
   appendedMessages.resize(0);
 }
@@ -241,8 +241,8 @@ void SocketUDP::_onUdpDisconnect(){
 void SocketUDP::_onUdpClose(){
   timer_deleteTimer(_isrtimer_num);
   _isrtimer_num = -1;
-  delete buffer;
-  delete msgheader;
+  delete[] buffer;
+  delete[] msgheader;
   wifiudp.stop();
 }
 
@@ -254,7 +254,7 @@ void SocketUDP::_queueMessage(unsigned short msgcode, void* msg, unsigned short 
       .bufferlen = msglen
     });
   else if(msg != NULL)
-    delete msg;
+    free(msg);
 }
 
 bool SocketUDP::_checkIfSameRemoteHost(){
@@ -307,13 +307,15 @@ bool SocketUDP::isconnected(){
 }
 
 void SocketUDP::set_pollingrate(unsigned char rateHz){
-  unsigned char *prhz = new unsigned char(rateHz);
+  unsigned char *prhz = (unsigned char*)malloc(sizeof(unsigned char));
+  *prhz = rateHz;
   _queueMessage(UDPS_SETPOLLRATE, prhz, sizeof(rateHz));
 }
 
 void SocketUDP::set_msgmaxsize(unsigned short msglen){
   if(msglen <= MAX_UDPMSGLEN){
-    unsigned short *pml = new unsigned short(msglen);
+    unsigned short *pml = (unsigned short*)malloc(sizeof(unsigned short));
+    *pml = msglen;
     _queueMessage(UDPS_SETMAXMSGSIZE, pml, sizeof(msglen));
   }
 }
