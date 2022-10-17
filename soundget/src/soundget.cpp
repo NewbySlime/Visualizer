@@ -1,10 +1,11 @@
 #include "soundget.hpp"
 #include "math.hpp"
 #include "exception"
-
 #include "chrono"
+#include "mutex"
 
-const REFERENCE_TIME MINDELAY = 10000;
+
+const REFERENCE_TIME MINDELAY = 100000;
 const long MICROSECOND = 1000000;
 const long MAXFREQGET = 2000;
 const int WAVE_FORMAT_PCM8 = 0x00010000 | WAVE_FORMAT_PCM;
@@ -44,53 +45,100 @@ SoundGet::~SoundGet(){
 
 // i might need to get all of the buffer data so it doesn't have delay (hope so)
 void SoundGet::_ThreadUpdate(){
-  auto timeSleep = std::chrono::microseconds((int)round((double)MICROSECOND/upPerSec));
   int samplesPerFrames = pWaveFormat->nChannels;
   int bytePerSample = pWaveFormat->wBitsPerSample/8;
+
+  std::chrono::microseconds timeSleep;
+  std::chrono::_V2::system_clock::time_point
+    lastTime = std::chrono::high_resolution_clock::now();
+
   while(isListening){
-    //printf("test");
-    //Sleep(hnsActualDuration/1000/2);
+    BYTE *apData = (BYTE*)malloc(0);
+    size_t apDataSize = 0;
+    size_t apDataSizeBytes = 0;
     BYTE *pData;
     UINT32 packetLength = 0;
 
+    // getting all audio buffer data
     pCaptureClient->GetNextPacketSize(&packetLength);
-    while(packetLength > 0 && isListening){
+    while(packetLength > 0){
+      //printf("plen %d %d\n", packetLength, apDataSize);
       UINT32 numFramesAvailable = 0;
       DWORD flags;
       pCaptureClient->GetBuffer(&pData, &numFramesAvailable, &flags, NULL, NULL);
 
-      // TODO the delay is pretty big (maybe the cause of it was reading small portion of the audio data, hence the delay)
-      // i might need to use all up, but it might need fft
-      int freqbinlen = (int)round(
-          (double)numFramesAvailable
-          *0.5f
-          *mmin((float)MAXFREQGET/(pWaveFormat->nSamplesPerSec/2), 1.f));
+      size_t plenInBytes = packetLength*samplesPerFrames*bytePerSample;
+      apData = (BYTE*)realloc(apData, apDataSizeBytes+plenInBytes);
+      memcpy(apData+apDataSizeBytes, pData, plenInBytes);
+      apDataSize += packetLength;
+      apDataSizeBytes += plenInBytes;
+      
+      pCaptureClient->ReleaseBuffer(numFramesAvailable);
+      pCaptureClient->GetNextPacketSize(&packetLength);
+    }
 
+    // processing the data
+    if(apDataSize > 0){ std::lock_guard<std::mutex> _lg(processingMutex);
+      //printf("apDataSize %d\n", apDataSize);
+      int freqbinlen = (int)round(
+        (double)apDataSize
+        *0.5f
+        *mmin((float)MAXFREQGET/(pWaveFormat->nSamplesPerSec/2), 1.f));
+
+      int _nidx = 0;
+      int _n = (int)ceilf((float)freqbinlen/numOfBands);
       int freqbinarrlen = freqbinlen*samplesPerFrames;
+      int freqbinarrmculen = numOfBands*samplesPerFrames;
       float *freqbinarr = new float[freqbinarrlen];
+      float *freqbinarrmcu = new float[freqbinarrmculen]();
+      //printf("freqbinlen %d\n", freqbinlen);
       for(int f_i = 0; f_i < freqbinlen; f_i++){
+        //printf("fi %d\n", f_i);
         for(int c_i = 0; c_i < samplesPerFrames; c_i++){
           vec2d ri_pair;
-          for(int frames_i = 0; frames_i < numFramesAvailable; frames_i++)
+          // FFT?
+          // Radix 2-DIT
+          for(int frames_i = 0; frames_i < apDataSize; frames_i += 2)
             ri_pair += DFT_partFunction(
               f_i,
               frames_i,
-              numFramesAvailable,
-              _GetFloatInTime(&pData[(frames_i*samplesPerFrames+c_i)*bytePerSample])
+              apDataSize,
+              _GetFloatInTime(&apData[(frames_i*samplesPerFrames+c_i)*bytePerSample])
+            )+
+            DFT_partFunction(
+              f_i,
+              frames_i+1,
+              apDataSize,
+              _GetFloatInTime(&apData[((frames_i+1)*samplesPerFrames+c_i)*bytePerSample])
             );
 
           ri_pair *= 2.f;
-          freqbinarr[f_i*samplesPerFrames+c_i] = (float)ri_pair.magnitude() * 5;
-          //printf("%f\n", freqbinarr[f_i*samplesPerFrames+c_i]);
+          float numf = (float)ri_pair.magnitude() * 5;
+          freqbinarr[f_i*samplesPerFrames+c_i] = numf;
+
+          freqbinarrmcu[_nidx+c_i*numOfBands] += numf/_n;
+          if(((f_i+1) % _n) == 0 && c_i == (samplesPerFrames-1))
+            _nidx++;
         }
       }
 
       CallbackListenerRaw(freqbinarr, freqbinarrlen, pWaveFormat);
-      delete freqbinarr;
+      CallbackListener(freqbinarrmcu, freqbinarrmculen, pWaveFormat);
+      delete[] freqbinarr;
+      delete[] freqbinarrmcu;
 
-      pCaptureClient->ReleaseBuffer(numFramesAvailable);
-      pCaptureClient->GetNextPacketSize(&packetLength);
-      std::this_thread::sleep_for(timeSleep);
+      timeSleep = std::chrono::microseconds((int)round((double)MICROSECOND/upPerSec));
+    }
+
+    free(apData);
+
+    // timing stuff
+    if(apDataSize > 0){
+      auto finishTime = std::chrono::high_resolution_clock::now();
+      _processingTime = ((std::chrono::duration<double>)(finishTime-lastTime)).count();
+      std::this_thread::sleep_for(timeSleep-(finishTime-lastTime));
+
+      lastTime = std::chrono::high_resolution_clock::now();
     }
   }
 }
@@ -173,6 +221,8 @@ HRESULT SoundGet::StartListening(int updatePerSec){
   if(isListening)
     return S_FALSE;
 
+  upPerSec = updatePerSec <= -1? upPerSec: updatePerSec;
+
   HRESULT errcode;
   
   errcode = pAudioDevice->Activate(IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&pAudioClient);
@@ -247,10 +297,9 @@ HRESULT SoundGet::StartListening(int updatePerSec){
   errcode = pAudioClient->Start();
   RETURNIFERROR(errcode);
 
-  upPerSec = updatePerSec;
   isListening = true;
-  _ThreadUpdate();
-  //audioThread = std::thread(&SoundGet::_ThreadUpdate, this);
+  //_ThreadUpdate();
+  audioThread = std::thread(&SoundGet::_ThreadUpdate, this);
   return S_OK;
 }
 
@@ -271,12 +320,23 @@ const std::vector<SoundDevice> *SoundGet::GetDevices(){
   return &soundDevices;
 }
 
-void SoundGet::SetDevice(int deviceIndex){
+const WAVEFORMATEX *SoundGet::GetWaveFormat(){
+  return pWaveFormat;
+}
+
+int SoundGet::GetIndex(){
+  return currentIndex;
+}
+
+// TODO return error in case if something wrong
+int SoundGet::SetDevice(int deviceIndex){
   if(isListening){
     fprintf(stderr, "Class SoundGet still getting audio data from current device. Stop it first.\n");
-    return;
+    return S_FALSE;
   }
 
+  // getting new devices (if there is)
+  RefreshDevices();
   HRESULT errcode = S_FALSE;
   if(pAudioDevice)
     pAudioDevice->Release();
@@ -289,4 +349,23 @@ void SoundGet::SetDevice(int deviceIndex){
   if(FAILED(errcode)){
     fprintf(stderr, "Cannot use sound device of index (%d).\nErrcode 0x%X\n", deviceIndex, errcode);
   }
+  else{
+    if(deviceIndex < 0){
+      // TODO checking for each device index saved, if match then the index is that
+    }
+    else
+      currentIndex = deviceIndex;
+  }
+
+  return errcode;
+}
+
+void SoundGet::SetUpdate(int updatePerSec){
+  std::lock_guard<std::mutex> _lg(processingMutex);
+  upPerSec = updatePerSec > 0? updatePerSec: upPerSec;
+}
+
+void SoundGet::SetNumBands(int num){
+  std::lock_guard<std::mutex> _lg(processingMutex);
+  numOfBands = num;
 }

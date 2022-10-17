@@ -1,0 +1,37 @@
+[gd_scene load_steps=4 format=2]
+
+[ext_resource path="res://scenes/option/Presets/Splitter_Button.tscn" type="PackedScene" id=1]
+[ext_resource path="res://scripts/editing_interface/Splitter.cs" type="Script" id=2]
+[ext_resource path="res://scenes/option/Presets/Splitter_Adjust.tscn" type="PackedScene" id=3]
+
+[node name="HBoxContainer" type="HBoxContainer"]
+margin_right = 372.0
+margin_bottom = 40.0
+custom_constants/separation = 4
+alignment = 1
+script = ExtResource( 2 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+_button = ExtResource( 1 )
+_button_adjust = ExtResource( 3 )
+
+[node name="LeftB" type="Button" parent="."]
+margin_left = 170.0
+margin_right = 182.0
+margin_bottom = 40.0
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="HBoxContainer" type="HBoxContainer" parent="."]
+margin_left = 186.0
+margin_right = 186.0
+margin_bottom = 40.0
+custom_constants/separation = 0
+alignment = 1
+
+[node name="RightB" type="Button" parent="."]
+margin_left = 190.0
+margin_right = 202.0
+margin_bottom = 40.0

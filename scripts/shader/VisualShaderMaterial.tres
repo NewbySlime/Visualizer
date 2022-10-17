@@ -1,0 +1,25 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=2]
+
+[ext_resource path="res://scripts/shader/equalizerShader.gdshader" type="Shader" id=1]
+
+[resource]
+shader = ExtResource( 1 )
+shader_param/color_type = 0
+shader_param/coldatalen = null
+shader_param/slide_offset = 0.0
+shader_param/brightness = 1.0
+shader_param/use_splits = false
+shader_param/static_valueposx = 0.0
+shader_param/rgb_window = 1.0
+shader_param/rgb_inunion = false
+shader_param/color_shift = null
+shader_param/brightness_mode = null
+shader_param/min_intensity = null
+shader_param/max_intensity = null
+shader_param/avg_intensity = null
+shader_param/channelCount = 1
+shader_param/arrayLength = null
+shader_param/splitsDataLen = null
+shader_param/manyLed = null
+shader_param/test1 = null
+shader_param/test2 = null

@@ -1,0 +1,48 @@
+how rgb works
+
+here's some constraint that will be used.
+
+  gradient with colors, for making the gradient of color across leds
+
+  speed for how fast the led switch color (gradient per ms)
+
+  how long the portion of the gradient used per strip (0f - 1f)
+
+  how many leds are used
+  and how to split each of them
+  can be set to sync with another split
+  and can be set to use reversed color placement for each split
+
+
+for sound mode
+
+  set use brightness (this will use brightness for the intensity measure)
+  set use color (this will use gradient of color for the intensity)
+    one of this should be on
+
+  set individual band
+
+  how many bands per led
+
+
+
+modes
+  for colour:
+    - static (only one colour, can't be changed, unless manually)
+    - rgb (colour changes according to gradient)
+    - sound (colour changes according to sound)
+  notes:
+    - if in sound mode and the led state is in static mode,
+      the amount of intensity is averaged across bands in union
+    - if in sound mode and the led state is in dynamic mode,
+      it will be normal, colour changing according to each bands
+  
+  for led state (could be brightness or colour changing):
+    for colour:
+      - union (colour changing in union)
+      - individual (colour changing individually, using rgb settings)
+    for brightness (sound only):
+      - sound-union (brightness changing in union according to sound)
+      - sound-individual (brightness changing individually according to sound)
+  notes:
+    - for colour shifting, it should have an option to use motion or intensity

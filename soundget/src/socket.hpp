@@ -14,21 +14,33 @@
 #define LockSocketN(pObj, var_name) std::lock_guard<std::mutex> var_name(pObj->GetMutex)
 
 #define MAX_SOCKETPACKETSIZE 512
-#define UDPS_DEFAULTPOLLRATE 30
+
+#define DEFAULT_SOCKETCHECKRATE 30
 
 
 // this class only handles a socket, which doesn't work on multiple oncoming socket connection
 // and handles it synchronously, even if one of the functions is called in another thread
 class SocketHandler_Sync{
   private:
-    sockaddr_in *hostAddress;
+    sockaddr_in *hostAddress = NULL;
     SOCKET currSock;
     std::mutex sMutex;
-    bool stopSending = false;
+    bool stopSending = true;
     int lastErrcode = 0;
 
+    bool _checkingDelay = false;
+    unsigned long pingDelayMs = 0;
+    std::chrono::_V2::system_clock::time_point _starttime;
+
     std::queue<std::pair<char*, int>> messageQueues;
+
+    bool _responded = true;
+    std::chrono::_V2::system_clock::time_point _starttimeout;
+
     
+    bool _checkrecv();
+    void _onnotresponding();
+    void _onresponding();
 
   public:
     SocketHandler_Sync(unsigned short port, const char *ip = "127.0.0.1");
@@ -55,79 +67,17 @@ class SocketHandler_Sync{
     // reconnecting socket for 5 times
     void ReconnectSocket();
 
+    void Disconnect();
+
     // only this function that is not thread-safe
     // the reason is in order to send datas in seperate function
     // to make it thread safe, use mutex from GetMutex() function
     void SendData(const void *data, int datalength);
     void SafeDelete();
-};
 
+    unsigned long LastPing();
 
-// No function for closing the socket because it isn't a listener
-class SocketHandlerUDP_Async{
-  private:
-    struct _message{
-      public:
-        unsigned short code;
-        void* msg;
-        unsigned short msglen;
-    };
-
-    sockaddr_in hostAddress;
-    SOCKET currSock;
-
-    std::chrono::milliseconds sleepTime;
-    std::mutex m_messageQueues, m_onDisconnect;
-    std::condition_variable cv_disconnect;
-    std::thread udpthread;
-
-    // carefull when the message buffer is actually null
-    std::queue<_message> messageQueues;
-
-    bool _actuallyConnected = false;
-    int _maxmsgsize = -1;
-
-    static void dumpfunc1(const char*,int){}
-    static void dumpfunc2(){}
-
-
-    // stopping a thread for sleepTime decrement by procduration
-    void sleepThread(std::chrono::duration<double> procduration);
-
-    void _QueueMessage(unsigned short code, void* msg = NULL, unsigned short msglen = 0);
-
-    void on_udpdisconnect();
-    void on_udppollrate(unsigned char rateHz);
-    void on_udpmaxsize(unsigned short maxmsgsize);
-    
-    void udpthreadfunc();
-    static void _udpthreadfunc(SocketHandlerUDP_Async *obj){
-      obj->udpthreadfunc();
-    }
-    
-  public:
-    typedef void (*SocketCallback)(const char*, int);
-    typedef void (*SocketCallbackvoid)();
-
-    SocketHandlerUDP_Async();
-    ~SocketHandlerUDP_Async();
-
-    // returns false if can't connect to the socket
-    // the program will block for around 1 sec
-    bool StartConnecting(const char *ipaddress, unsigned short port);
-    void QueueMessage(char* msg, int len);
-    // this will also tell to remoteHost to change its pollrate
-    void ChangePollrate(unsigned char rateHz);
-    // don't delete the buffer when the callback called
-    void SetCallback(SocketCallback cb);
-    void SetCallback_disconnect(SocketCallbackvoid cb);
-    void WaitUntilDisconnect();
-    void Disconnect();
-  
-  
-  private:
-    SocketCallback callback;
-    SocketCallbackvoid cbOnDisconnected;
+    void ChangeAddress(unsigned short port, const char *ip = "127.0.0.1");
 };
 
 #endif

@@ -1,0 +1,167 @@
+#ifndef FILE_SYSTEM
+#define FILE_SYSTEM
+
+#include "EEPROM.hpp"
+#include "vector"
+#include "queue"
+
+
+enum fs_error{
+  file_too_big,
+  file_not_found,
+  storage_not_bound,
+  storage_not_initiated,
+  storage_busy,
+  fs_fault,
+  ok
+};
+
+
+// almost all function will run asynchronously
+class file_system{
+  public:
+    typedef void (*fs_readcb)(void*);
+
+  private:
+    struct file_info{
+      bool operator<(const file_info &f){
+        return id < f.id;
+      }
+
+      static bool sort_bound(const file_info &f1, const file_info &f2){
+        return f1.low_bound < f2.high_bound;
+      }
+
+      uint16_t id;
+      uint32_t file_info_address;
+      uint32_t high_bound = 0, low_bound = 0;
+
+
+      // Future State variables
+
+      // this will changed, asap, but not reflect the actual size
+      // if this variable set to 0, it means that the file will be deleted
+      //
+      // if _future_size keeps on 0 until deleting queue then it will be erased from f_info
+      uint32_t _future_size;
+    };
+
+
+    enum _queue_enum{
+      done = 0,
+      done_r = 1,
+      read = 2,
+      defrag = 3,
+      delete_fileid = 4,
+      add_fileid = 5,
+      write = 6,
+      update_bounds = 7,
+      update_allidtable = 8
+    };
+
+
+    // NOTE: don't use id address, as it can changed when defragging or deleted afterward
+    struct read_queue{
+      uint8_t _q = file_system::_queue_enum::read;
+      uint32_t id;
+      char *data;
+      fs_readcb cb;
+      void *obj;
+    };
+
+    struct defrag_queue{
+      uint8_t _q = file_system::_queue_enum::defrag;
+    };
+
+    struct delete_queue{
+      uint8_t _q = file_system::_queue_enum::delete_fileid;
+      uint32_t id;
+    };
+
+    // or adding
+    struct write_queue{
+      uint8_t _q = file_system::_queue_enum::write;
+      uint32_t id;
+      char *data;
+      size_t datasize;
+    };
+
+    // current state variables
+    uint32_t _lowest_address;
+    uint32_t _current_size;
+
+    // future state variables
+    uint32_t _future_storagesize;
+
+    // this will be instantly added when write_file called (in adding context)
+    // and instantly deleted when delete queue and the _future_size is 0
+    std::vector<file_info> f_info;
+    std::vector<char*> queue_edit;
+    EEPROM_Class *bound_storage = NULL;
+
+    uint8_t _sizebytes;
+    bool _notready = false;
+
+
+    // variables for read/write task
+    char *_tmpdata = NULL;
+    size_t _tmpdatasize;
+    size_t _defrag_nextaddress;
+    bool _defrag_reading = false;
+    bool _defrag_donesorting = false;
+    std::vector<file_info> _sfinfo;
+
+
+    void _check_queue();
+    void _on_donewr();
+    static void __on_donewr(void *obj){
+      ((file_system*)obj)->_on_donewr();
+    }
+
+    void _on_donereadfile();
+
+
+    size_t _header_size();
+    size_t _header_fullsize(size_t _size = 0);
+    size_t _fileinfo_size();
+
+    // EEPROM size on bottom side
+    size_t _bottom_size();
+
+    // if file_info is NULL, then the file isn't exist
+    // this is based on current state
+    file_info *_get_fileinfo(uint16_t file_id);
+
+    // if file_info is NULL, then the file isn't exist
+    // this is based on future state
+    file_info *_file_exist(uint16_t file_id);
+
+  
+  public:
+    // NOTE: blocking function
+    static fs_error init_storage(EEPROM_Class *storage);
+
+    // NOTE: blocking function
+    fs_error bind_storage(EEPROM_Class *storage);
+
+    fs_error read_file(uint16_t file_id, char *data, fs_readcb callback, void *cobj);
+
+    // don't free memory outside the function, let the func handle it
+    fs_error write_file(uint16_t file_id, char *data, size_t datasize);
+    fs_error delete_file(uint16_t file_id);
+
+    // will return 0, if the file doens't exist
+    // make sure this object isn't busy, as the update will only applied whenever the file is finished update
+    size_t file_size(uint16_t file_id);
+    bool file_exist(uint16_t file_id);
+
+    fs_error erase_storage(uint16_t file_id);
+
+    // actual EEPROM size
+    size_t storage_free();
+
+    // checking if still busy
+    bool is_busy();
+};
+
+#endif

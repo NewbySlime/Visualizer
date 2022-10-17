@@ -1,0 +1,39 @@
+[gd_scene load_steps=5 format=2]
+
+[ext_resource path="res://images/gradientWhiteT.png" type="Texture" id=1]
+[ext_resource path="res://scripts/Visualizer.cs" type="Script" id=2]
+[ext_resource path="res://scripts/shader/equalizerShader.gdshader" type="Shader" id=3]
+
+[sub_resource type="ShaderMaterial" id=1]
+shader = ExtResource( 3 )
+shader_param/color_type = 0
+shader_param/coldatalen = null
+shader_param/slide_offset = 0.0
+shader_param/brightness = 1.0
+shader_param/use_splits = false
+shader_param/static_valueposx = 0.0
+shader_param/rgb_window = 1.0
+shader_param/rgb_inunion = false
+shader_param/color_shift = null
+shader_param/brightness_mode = null
+shader_param/min_intensity = null
+shader_param/max_intensity = null
+shader_param/avg_intensity = null
+shader_param/channelCount = 1
+shader_param/arrayLength = null
+shader_param/splitsDataLen = null
+shader_param/manyLed = null
+shader_param/test1 = null
+shader_param/test2 = null
+
+[node name="TextureRect" type="TextureRect"]
+material = SubResource( 1 )
+anchor_right = 1.0
+anchor_bottom = 1.0
+texture = ExtResource( 1 )
+expand = true
+stretch_mode = 1
+script = ExtResource( 2 )
+__meta__ = {
+"_edit_use_anchors_": false
+}

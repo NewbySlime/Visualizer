@@ -1,5 +1,0 @@
-when sending a message to udp socket, the format should be SENDMESSAGE followed with actual message size, the message should be after the first packet (header)
-
-the header should only consist of message code and additional data
-
-always read 2 bytes when there's no incoming message

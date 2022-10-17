@@ -1,0 +1,24 @@
+[gd_scene load_steps=7 format=2]
+
+[ext_resource path="res://scripts/editing_interface/SliderColor.cs" type="Script" id=1]
+[ext_resource path="res://scenes/option/Opt_ColorPickerDrag.tscn" type="PackedScene" id=2]
+[ext_resource path="res://images/testing.png" type="Texture" id=3]
+[ext_resource path="res://images/Blank1.png" type="Texture" id=4]
+[ext_resource path="res://scripts/shader/gradientShader.gdshader" type="Shader" id=5]
+
+[sub_resource type="ShaderMaterial" id=1]
+shader = ExtResource( 5 )
+shader_param/coldatalen = 10
+shader_param/coldata = ExtResource( 3 )
+
+[node name="TextureButton" type="TextureButton"]
+material = SubResource( 1 )
+margin_right = 194.0
+margin_bottom = 15.0
+texture_normal = ExtResource( 4 )
+expand = true
+script = ExtResource( 1 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+colorPickerScene = ExtResource( 2 )

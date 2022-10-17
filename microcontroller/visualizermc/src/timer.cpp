@@ -1,5 +1,10 @@
 #include "timer.hpp"
 
+#ifdef SOFTWARE_TIMERS
+
+// if using hardware timers
+#else
+
 #include "ESP8266TimerInterrupt.h"
 #include "ESP8266_ISR_Timer.h"
 
@@ -9,7 +14,7 @@ ESP8266_ISR_Timer ISR_Timer;
 
 TimerCallbackArg cbcont[MAX_NUMBER_TIMERS];
 void* cobjcont[MAX_NUMBER_TIMERS];
-int* idcont[MAX_NUMBER_TIMERS] = {NULL};
+int idcont[MAX_NUMBER_TIMERS];
 volatile unsigned short _flags = 0;
 volatile unsigned short _deleteFlags = 0;
 
@@ -26,32 +31,37 @@ void IRAM_ATTR _onTimeoutT(void *param){
   _deleteFlags |= (1 << idtimer);
 }
 
-int timer_setInterval(unsigned long delay, TimerCallbackArg cb, void *cobj){
-  int *idTimer = new int();
-  *idTimer = ISR_Timer.setInterval(delay, _onTimeout, idTimer);
-  if(*idTimer >= 0){
-    cbcont[*idTimer] = cb;
-    cobjcont[*idTimer] = cobj;
-    idcont[*idTimer] = idTimer;
-  }
-  else
-    delete idTimer;
+int getidcont_firstidx(){
+  for(int i = 0; i < MAX_NUMBER_TIMERS; i++)
+    if(idcont[i] == -1)
+      return i;
+  
+  return -1;
+}
 
-  return *idTimer;
+int timer_setInterval(unsigned long delay, TimerCallbackArg cb, void *cobj){
+  int idcontidx = getidcont_firstidx();
+  if(idcontidx == -1)
+    return -1;
+  
+  int timer_idx = ISR_Timer.setInterval(delay, _onTimeout, &idcont[idcontidx]);
+  cbcont[timer_idx] = cb;
+  cobjcont[timer_idx] = cobj;
+  idcont[idcontidx] = timer_idx;
+
+  return timer_idx;
 }
 
 int timer_setTimeout(unsigned long delay, TimerCallbackArg cb, void *cobj){
-  int *idTimer = new int();
-  *idTimer = ISR_Timer.setTimeout(delay, _onTimeoutT, idTimer);
-  if(*idTimer >= 0){
-    cbcont[*idTimer] = cb;
-    cobjcont[*idTimer] = cobj;
-    idcont[*idTimer] = idTimer;
-  }
-  else
-    delete idTimer;
+  int idcontidx = getidcont_firstidx();
+  if(idcontidx == -1)
+    return -1;
+
+  int timer_idx = idcont[idcontidx] = ISR_Timer.setTimeout(delay, _onTimeoutT, &idcont[idcontidx]);
+  cbcont[timer_idx] = cb;
+  cobjcont[timer_idx] = cobj;
   
-  return *idTimer;
+  return timer_idx;
 }
 
 bool timer_changeInterval(unsigned int timer_id, unsigned long delay){
@@ -62,10 +72,11 @@ void timer_deleteTimer(unsigned int timer_id){
   if(timer_id < MAX_NUMBER_TIMERS){
     ISR_Timer.deleteTimer(timer_id);
 
-    if(idcont[timer_id] != NULL){
-      delete idcont[timer_id];
-      idcont[timer_id] = NULL;
+    if(idcont[timer_id] != -1){
+      idcont[timer_id] = -1;
     }
+
+    _flags &= ~(1 << timer_id);
   }
 }
 
@@ -75,15 +86,14 @@ void timer_update(){
   if(_flags > 0){
     //Serial.printf("flags: 0x%X\n", _flags);
     for(char i = 0; i < MAX_NUMBER_TIMERS; i++){
+      if((_deleteFlags & (1 << i)) > 0){
+        idcont[i] = -1;
+        _deleteFlags &= ~(1 << i);
+      }
+
       if((_flags & (1 << i)) > 0){
         cbcont[i](cobjcont[i]);
         _flags &= ~(1 << i);   
-      }
-
-      if((_deleteFlags & (1 << i)) > 0){
-        delete idcont[i];
-        idcont[i] = NULL;
-        _deleteFlags &= ~(1 << i);
       }
     }
   }
@@ -95,8 +105,13 @@ void IRAM_ATTR _onInterval(){
 }
 
 int timer_init(){
+  for(int i = 0; i < MAX_NUMBER_TIMERS; i++)
+    idcont[i] = -1;
+
   Timer.attachInterruptInterval(1000, _onInterval);
   return 0;
 }
 
 int __tmp = timer_init();
+
+#endif

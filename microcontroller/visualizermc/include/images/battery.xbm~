@@ -1,4 +1,0 @@
-#define _width 8
-#define _height 4
-static char _bits[] = {
- 0x01,0x7c,0x7c,0x01 };

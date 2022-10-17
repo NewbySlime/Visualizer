@@ -1,0 +1,88 @@
+[gd_scene load_steps=6 format=2]
+
+[ext_resource path="res://scripts/shader/fade_blur.gdshader" type="Shader" id=1]
+[ext_resource path="res://scripts/ErrorShowBlockAutoload.cs" type="Script" id=2]
+[ext_resource path="res://images/half_ss_fade.png" type="Texture" id=3]
+
+[sub_resource type="ShaderMaterial" id=2]
+shader = ExtResource( 1 )
+shader_param/blur = 0.0
+shader_param/blur_mult = 0.0
+
+[sub_resource type="StyleBoxFlat" id=1]
+bg_color = Color( 0.176471, 0.176471, 0.176471, 1 )
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color( 0.0941176, 0.0941176, 0.0941176, 1 )
+border_blend = true
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[node name="Control" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource( 2 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+time_animation = 0.3
+blur = 0.5
+blur_mult = 2.5
+BezierAnimData = PoolRealArray( 0, 0.7, 0.9, 1 )
+
+[node name="1" type="TextureRect" parent="."]
+material = SubResource( 2 )
+margin_right = 200.0
+margin_bottom = 200.0
+texture = ExtResource( 3 )
+expand = true
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="2" type="Panel" parent="."]
+rect_min_size = Vector2( 150, 70 )
+custom_styles/panel = SubResource( 1 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="1" type="MarginContainer" parent="2"]
+margin_right = 50.0
+custom_constants/margin_right = 10
+custom_constants/margin_top = 20
+custom_constants/margin_left = 10
+custom_constants/margin_bottom = 20
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="1" type="VBoxContainer" parent="2/1"]
+margin_left = 10.0
+margin_top = 20.0
+margin_right = 160.0
+margin_bottom = 104.0
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="1" type="Label" parent="2/1/1"]
+margin_right = 150.0
+margin_bottom = 80.0
+rect_min_size = Vector2( 150, 80 )
+text = "test"
+align = 1
+valign = 1
+
+[node name="2" type="HBoxContainer" parent="2/1/1"]
+margin_top = 84.0
+margin_right = 150.0
+margin_bottom = 84.0
+__meta__ = {
+"_edit_use_anchors_": false
+}

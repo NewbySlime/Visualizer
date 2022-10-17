@@ -1,0 +1,18 @@
+[gd_scene load_steps=8 format=2]
+
+[ext_resource path="res://scripts/editing_interface/IEditInterface_Create.cs" type="Script" id=1]
+[ext_resource path="res://scenes/option/Opt_EditCheck.tscn" type="PackedScene" id=2]
+[ext_resource path="res://scenes/option/Opt_EditChoice.tscn" type="PackedScene" id=3]
+[ext_resource path="res://scenes/option/Opt_EditSlider.tscn" type="PackedScene" id=4]
+[ext_resource path="res://scenes/option/Opt_EditText.tscn" type="PackedScene" id=5]
+[ext_resource path="res://scenes/option/Opt_EditButton.tscn" type="PackedScene" id=6]
+[ext_resource path="res://scenes/option/Opt_EditStaticText.tscn" type="PackedScene" id=7]
+
+[node name="Node" type="Node"]
+script = ExtResource( 1 )
+ECheck = ExtResource( 2 )
+EChoice = ExtResource( 3 )
+ESlider = ExtResource( 4 )
+EText = ExtResource( 5 )
+EStaticText = ExtResource( 7 )
+EButton = ExtResource( 6 )

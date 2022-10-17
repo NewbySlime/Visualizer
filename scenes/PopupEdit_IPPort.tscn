@@ -1,0 +1,15 @@
+[gd_scene load_steps=3 format=2]
+
+[ext_resource path="res://scenes/option/Presets/PopupEdit.tscn" type="PackedScene" id=1]
+[ext_resource path="res://scripts/PopupEdit_IPPort.cs" type="Script" id=2]
+
+[node name="Popup" instance=ExtResource( 1 )]
+script = ExtResource( 2 )
+Title = "MCU Address"
+Title_IPAddress = "IP Address"
+Title_Port = "Port"
+Margin_Top = 100
+Margin_Bottom = 10
+Margin_Left = 5
+Margin_Right = 5
+TextAlignment = 1

@@ -1,0 +1,9 @@
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\bin\ExportDebug\visualizer.dll
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\bin\ExportDebug\visualizer.pdb
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\ExportDebug\visualizer.csproj.AssemblyReference.cache
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\ExportDebug\visualizer.GeneratedMSBuildEditorConfig.editorconfig
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\ExportDebug\visualizer.AssemblyInfoInputs.cache
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\ExportDebug\visualizer.AssemblyInfo.cs
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\ExportDebug\visualizer.csproj.CoreCompileInputs.cache
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\ExportDebug\visualizer.dll
+C:\GodotGamePorjectMono\Visualizer\.mono\temp\obj\ExportDebug\visualizer.pdb

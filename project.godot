@@ -11,11 +11,25 @@ config_version=4
 [application]
 
 config/name="visualizer"
-config/icon="res://icon.png"
+run/main_scene="res://scenes/MainWindow.tscn"
+run/low_processor_mode=true
+config/icon="res://images/icon.png"
+
+[autoload]
+
+IEditInterfaceCreate="*res://scenes/propset/IEditInterface_Create.tscn"
+ErrorShowAutoload="*res://scenes/Autoload/ErrorShowAutoload.tscn"
+ErrorBlockShowAutoload="*res://scenes/Autoload/ErrorBlockShowAutoload.tscn"
 
 [debug]
 
-settings/fps/force_fps=30
+settings/fps/force_fps=60
+
+[display]
+
+window/size/resizable=false
+window/stretch/mode="viewport"
+window/stretch/aspect="keep"
 
 [global]
 

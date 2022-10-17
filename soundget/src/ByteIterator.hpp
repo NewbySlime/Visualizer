@@ -13,6 +13,8 @@ class ByteIterator{
 
   public:
     ByteIterator(const void *data, size_t datalength);
+
+    void seek(size_t idx);
     
     template<typename _type> void getVar(_type &variable);
 
@@ -22,6 +24,9 @@ class ByteIterator{
 
     // return how many times it reads
     size_t getVar(char *buffer, size_t bufferlen);
+
+    // tells how much byte available to write
+    size_t available();
 };
 
 class ByteIteratorR{
@@ -33,15 +38,20 @@ class ByteIteratorR{
   public:
     ByteIteratorR(void *buffer, size_t datalength);
 
+    void seek(size_t idx);
+
     // if successful, it'll return true
     template<typename _type> bool setVar(_type variable);
 
-    size_t setVar(void *data, size_t datalength){
+    size_t setVar(const void *data, size_t datalength){
       return setVar(reinterpret_cast<const char*>(data), datalength);
     }
 
     // return how many times it writes
     size_t setVar(const char *data, size_t datalength);
+
+    // tells how much byte available to write
+    size_t available();
 };
 
 #endif

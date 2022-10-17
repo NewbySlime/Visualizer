@@ -1,0 +1,36 @@
+[gd_scene load_steps=2 format=2]
+
+[ext_resource path="res://scripts/editing_interface/EditText.cs" type="Script" id=1]
+
+[node name="HBoxContainer" type="HBoxContainer"]
+margin_right = 250.0
+margin_bottom = 25.0
+rect_min_size = Vector2( 0, 25 )
+rect_scale = Vector2( 1.09582, 0.99366 )
+script = ExtResource( 1 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Label" type="Label" parent="."]
+margin_top = 5.0
+margin_right = 123.0
+margin_bottom = 19.0
+size_flags_horizontal = 3
+text = "asdf"
+autowrap = true
+max_lines_visible = 1
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="TextEdit" type="TextEdit" parent="."]
+margin_left = 127.0
+margin_right = 250.0
+margin_bottom = 25.0
+size_flags_horizontal = 3
+size_flags_vertical = 5
+text = "asdf"
+__meta__ = {
+"_edit_use_anchors_": false
+}

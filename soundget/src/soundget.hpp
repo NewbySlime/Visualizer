@@ -12,6 +12,9 @@
 #include "string"
 #include "vector"
 #include "thread"
+#include "mutex"
+
+#define DEFAULT_UPDATERATE 30
 
 struct SoundDevice{
   LPWSTR deviceID;
@@ -30,10 +33,13 @@ class SoundGet{
     std::vector<SoundDevice> soundDevices{};
     int numOfBands = 8;
     int currentWaveFormat;
+    int currentIndex = -1;
 
     bool isListening = false;
-    int upPerSec;
+    int upPerSec = DEFAULT_UPDATERATE;
+    float _processingTime = 0.0f;
     std::thread audioThread;
+    std::mutex processingMutex;
 
     void _ThreadUpdate();
 
@@ -51,10 +57,17 @@ class SoundGet{
     ~SoundGet();
 
     void RefreshDevices();
-    HRESULT StartListening(int updatePerSec);
+    HRESULT StartListening(int updatePerSec = -1);
     void StopListening();
     const std::vector<SoundDevice> *GetDevices();
-    void SetDevice(int deviceIndex);
+    const WAVEFORMATEX* GetWaveFormat();
+    int GetIndex();
+    int SetDevice(int deviceIndex);
+    void SetUpdate(int updatePerSec);
+    void SetNumBands(int num);
+    float GetTime(){
+      return _processingTime;
+    }
 };
 
 #endif
