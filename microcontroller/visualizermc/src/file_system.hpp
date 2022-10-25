@@ -24,8 +24,12 @@ class file_system{
 
   private:
     struct file_info{
-      bool operator<(const file_info &f){
-        return id < f.id;
+      friend bool operator<(const file_info &f, const file_info &f1){
+        return f.id < f1.id;
+      }
+
+      friend bool operator==(const file_info &f, const file_info &f1){
+        return f.id == f1.id;
       }
 
       static bool sort_bound(const file_info &f1, const file_info &f2){
@@ -34,7 +38,7 @@ class file_system{
 
       uint16_t id;
       uint32_t file_info_address;
-      uint32_t high_bound = 0, low_bound = 0;
+      uint32_t high_bound, low_bound;
 
 
       // Future State variables
@@ -48,15 +52,14 @@ class file_system{
 
 
     enum _queue_enum{
-      done = 0,
-      done_r = 1,
-      read = 2,
-      defrag = 3,
-      delete_fileid = 4,
-      add_fileid = 5,
-      write = 6,
-      update_bounds = 7,
-      update_allidtable = 8
+      done,
+      done_r,
+      done_w,
+      read,
+      defrag,
+      write,
+      update_bounds,
+      update_allidtable
     };
 
 
@@ -73,11 +76,6 @@ class file_system{
       uint8_t _q = file_system::_queue_enum::defrag;
     };
 
-    struct delete_queue{
-      uint8_t _q = file_system::_queue_enum::delete_fileid;
-      uint32_t id;
-    };
-
     // or adding
     struct write_queue{
       uint8_t _q = file_system::_queue_enum::write;
@@ -88,7 +86,6 @@ class file_system{
 
     // current state variables
     uint32_t _lowest_address;
-    uint32_t _current_size;
 
     // future state variables
     uint32_t _future_storagesize;
@@ -107,10 +104,12 @@ class file_system{
     char *_tmpdata = NULL;
     size_t _tmpdatasize;
     size_t _defrag_nextaddress;
-    bool _defrag_reading = false;
+    bool _defrag_reading = true;
     bool _defrag_donesorting = false;
     std::vector<file_info> _sfinfo;
 
+    void _tmpdata_new(size_t memsize);
+    void _tmpdata_free();
 
     void _check_queue();
     void _on_donewr();
@@ -118,11 +117,12 @@ class file_system{
       ((file_system*)obj)->_on_donewr();
     }
 
-    void _on_donereadfile();
+    void _finishwr();
 
 
     size_t _header_size();
-    size_t _header_fullsize(size_t _size = 0);
+    size_t _header_fullsize();
+    size_t __header_fullsize(size_t _size);
     size_t _fileinfo_size();
 
     // EEPROM size on bottom side
@@ -144,6 +144,7 @@ class file_system{
     // NOTE: blocking function
     fs_error bind_storage(EEPROM_Class *storage);
 
+    // made sure that the buffer is enough to contain file data
     fs_error read_file(uint16_t file_id, char *data, fs_readcb callback, void *cobj);
 
     // don't free memory outside the function, let the func handle it
@@ -155,13 +156,19 @@ class file_system{
     size_t file_size(uint16_t file_id);
     bool file_exist(uint16_t file_id);
 
-    fs_error erase_storage(uint16_t file_id);
-
     // actual EEPROM size
     size_t storage_free();
 
     // checking if still busy
     bool is_busy();
+
+    // returns how big the fragmentation hole taking up the space
+    // returns in range 0 to 1
+    float frag_percentage();
+
+    // defragging the storage
+    // will not return ok if the frag percentage is 0
+    fs_error storage_defrag();
 };
 
 #endif

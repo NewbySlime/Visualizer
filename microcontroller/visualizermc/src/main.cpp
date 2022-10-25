@@ -25,6 +25,7 @@
 #include "preset.hpp"
 #include "visualizerled.hpp"
 #include "EEPROM.hpp"
+#include "file_system.hpp"
 
 #include "misc.hpp"
 
@@ -708,15 +709,128 @@ char test[1000];
 void test_sending(void*){
   Serial.begin(9600);
 
-  storage.bufWriteBlock(0x20, "estt", 4);
+  storage.bufWriteBlock(0x20, "estr", 4);
   storage.bufReadBlock(0x20, test, 4);
 
   printf("%s\n", test);
 }
 
+void _dmp_func(void*){}
+
+#define waitforfs while(_fs.is_busy()) loop()
+
+file_system _fs;
+
+void loop();
+void test_eeprom(){
+  /** TODO list
+   * Testing write data to file system v
+   * Testing read data to file system v
+   * Testing delete data from file system v
+   * 
+   * Updating file everytime the microcontroller is starting v
+   * Testing defragging v
+   */
+
+  Serial.begin(9600);
+
+  fs_error err;
+
+  Serial.printf("Binding eeprom... ");
+  //_fs.init_storage(&storage);
+  err = _fs.bind_storage(&storage);
+
+  if(err == fs_error::storage_not_initiated){
+    Serial.printf("\nStorage isn't a file system.\nInitiating... ");
+    _fs.init_storage(&storage);
+    Serial.printf("done.\nBinding again... ");
+    _fs.bind_storage(&storage);
+    Serial.printf("done.\n");
+  }
+
+  const uint16_t n1_fid = 0x30;
+  const uint16_t n2_fid = 0x31;
+  const uint16_t str_fid = 0x100;
+
+  uint32_t *_n1 = (uint32_t*)malloc(sizeof(uint32_t));
+  uint32_t *_n2 = (uint32_t*)malloc(sizeof(uint32_t));
+
+  uint32_t n1, n2;
+  err = _fs.read_file(n1_fid, reinterpret_cast<char*>(&n1), _dmp_func, NULL);
+  if(err == fs_error::file_not_found){
+    Serial.printf("n1 and n2 not found, initiating...\n");
+    n1 = 1;
+    n2 = 1;
+  }
+  else{
+    while(_fs.is_busy())
+      polling_update();
+    err = _fs.read_file(n2_fid, reinterpret_cast<char*>(&n2), _dmp_func, NULL);
+    while(_fs.is_busy())
+      polling_update();
+  }
+
+
+  Serial.printf("n1 %d\nn2 %d\n", n1, n2);
+  n1 += (uint32_t)ceil(pow(n1*n2, 0.5));
+
+  *_n1 = n1;
+  *_n2 = n2;
+  
+  size_t _strsize = _fs.file_size(str_fid);
+  char *_str = (char*)malloc(_strsize);
+  err = _fs.read_file(str_fid, _str, _dmp_func, NULL);
+  
+  if(err == fs_error::file_not_found){
+    Serial.printf("\n_str not found, initiating...\n");
+    _strsize = 6;
+    _str = (char*)realloc(_str, _strsize);
+    memcpy(_str, "Hello!", _strsize);
+  }
+  else{
+    while(_fs.is_busy())
+      polling_update();
+
+    string str;
+    str.append(_str, _strsize);
+    Serial.printf("_str: %s\n", str.c_str());
+  }
+
+  _strsize++;
+  _str = (char*)realloc(_str, _strsize);
+  _str[_strsize-1] = '.';
+
+
+  _fs.write_file(n1_fid, reinterpret_cast<char*>(_n1), sizeof(uint32_t));
+  _fs.write_file(n2_fid, reinterpret_cast<char*>(_n2), sizeof(uint32_t));
+
+  _fs.write_file(str_fid, _str, _strsize);
+
+  Serial.printf("fragment percentage: %f%%\n", _fs.frag_percentage()*100);
+  //_fs.storage_defrag();
+}
+
+void test_eeprom2(){
+  _fs.bind_storage(&storage);
+  _fs.delete_file(0x100);
+}
+
 
 void setup() {
   #ifdef DO_TEST_SKETCH
+  delay(10000);
+  //test_sending(NULL);
+  //test_eeprom();
+
+  test_eeprom2();
+
+  /*
+  Serial.begin(9600);
+  Serial.printf("test\n");
+  file_system fs;
+  fs.init_storage(&storage);
+  fs.bind_storage(&storage);
+  */
   #else
 
   delay(5000);

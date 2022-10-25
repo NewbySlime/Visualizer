@@ -65,7 +65,6 @@ class EEPROM_Class{
     size_t bufWriteBlock(uint32_t address, char *buf, size_t buflen);
 
     // can write more than the pagesize, but it will send in async until all data is sent
-    // don't free the buffer, let the function free the buffer
     void bufWriteAsync(uint32_t address, char *buf, size_t buflen, EEPROM_Cb cb, void* obj);
 
     size_t bufReadBlock_currAddr(char *buf, size_t buflen);

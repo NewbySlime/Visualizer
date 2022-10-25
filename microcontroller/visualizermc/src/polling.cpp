@@ -1,6 +1,8 @@
 #include "polling.h"
 #include "map"
 
+#include "Arduino.h"
+
 std::map<unsigned long long, void(*)(void*)> _functions;
 
 bool polling_addfunc(void(*fn)(void*), void *obj){

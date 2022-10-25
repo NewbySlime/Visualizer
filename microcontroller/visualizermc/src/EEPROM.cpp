@@ -7,12 +7,14 @@
 
 #include "timer.hpp"
 #include "polling.h"
+#include "debug.hpp"
 
 #define BUF_MAX 16
 
 
 /*      EEPROM_Class functions      */
 size_t EEPROM_Class::_bufWrite(uint32_t address, char *buf, size_t buflen){
+  DEBUG_PRINT("address %d, _size %d\n", address, _size);
   if(address >= _size){
     _memlimit = true;
     return 0;
@@ -30,7 +32,7 @@ size_t EEPROM_Class::_bufWrite(uint32_t address, char *buf, size_t buflen){
     Wire.beginTransmission(_addr);
 
     for(int i = _addresssize-1; i >= 0; i--)
-      Wire.write((uint8_t)(address << (8*i)));
+      Wire.write((uint8_t)(address >> (8*i)));
       
     Wire.write(buf, bytesend);
     Wire.endTransmission();
@@ -70,7 +72,7 @@ void EEPROM_Class::_seekAddress(uint32_t address){
   Wire.beginTransmission(_addr);
   
   for(int i = _addresssize-1; i >= 0; i--)
-    Wire.write((uint8_t)(address << (8*i)));
+    Wire.write((uint8_t)(address >> (8*i)));
   
   Wire.endTransmission();
 
@@ -78,13 +80,17 @@ void EEPROM_Class::_seekAddress(uint32_t address){
 }
 
 void EEPROM_Class::_timer_bufWrite(){
+  DEBUG_PRINT("timer bufwrite\n");
   if(_t_bytesent < _t_buflen && !_memlimit){
     _t_bytesent += _bufWrite(_t_address+_t_bytesent, _t_buf+_t_bytesent, _t_buflen-_t_bytesent);
-    timer_setTimeout(_delayms, __onTimer, this);
+    int _t = timer_setTimeout(_delayms, __onTimer, this);
+    DEBUG_PRINT("_t %d\n", _t);
   }
   else{
     _ready_use = true;
+    DEBUG_PRINT("calling\n");
     _cb(_classobj);
+    DEBUG_PRINT("done calling\n");
   }
 }
 
@@ -116,6 +122,7 @@ size_t EEPROM_Class::bufWriteBlock(uint32_t address, char *buf, size_t buflen){
 
 void EEPROM_Class::bufWriteAsync(uint32_t address, char *buf, size_t buflen, EEPROM_Cb cb, void* obj){
   if(_ready_use){
+    DEBUG_PRINT("ready use\n");
     _ready_use = false;
     _memlimit = false;
     _t_bytesent = 0;
@@ -146,6 +153,7 @@ size_t EEPROM_Class::bufReadBlock(uint32_t address, char *buf, size_t buflen){
   if(_ready_use){
     _memlimit = false;
     _seekAddress(address);
+    delay(_delayms);
     return bufReadBlock_currAddr(buf, buflen);
   }
 

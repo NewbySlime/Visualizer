@@ -92,8 +92,8 @@ void timer_update(){
       }
 
       if((_flags & (1 << i)) > 0){
-        cbcont[i](cobjcont[i]);
         _flags &= ~(1 << i);   
+        cbcont[i](cobjcont[i]);
       }
     }
   }
