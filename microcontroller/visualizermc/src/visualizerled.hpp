@@ -14,7 +14,7 @@ class visualizer{
     
     // per channel
     float *_unionSoundData;
-    preset *_currentPreset;
+    preset *_currentPreset = NULL;
 
     float _colorOffset;
     

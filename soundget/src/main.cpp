@@ -230,43 +230,48 @@ void checkMcuMessage();
 void checkSocketMessage(Socket_MessageCallbacks*);
 void _sendMCUState();
 void _threadMCU(){
-  // connecting first
-  char ipaddr[16];
-  sprintf_s(ipaddr, "%d.%d.%d.%d",
-    _mcu_ipaddr & 0xff,
-    (_mcu_ipaddr >> 8) & 0xff,
-    (_mcu_ipaddr >> 16) & 0xff,
-    (_mcu_ipaddr >> 24) & 0xff
-  );
+  try{
+    // connecting first
+    char ipaddr[16];
+    sprintf_s(ipaddr, "%d.%d.%d.%d",
+      _mcu_ipaddr & 0xff,
+      (_mcu_ipaddr >> 8) & 0xff,
+      (_mcu_ipaddr >> 16) & 0xff,
+      (_mcu_ipaddr >> 24) & 0xff
+    );
 
-  printf("ip: %s\n", ipaddr);
+    printf("ip: %s\n", ipaddr);
 
-  _mcu_connstate = MCUCONNSTATE_RECONNECT;
+    _mcu_connstate = MCUCONNSTATE_RECONNECT;
 
-  mcuSock->ChangeAddress(mcuport, ipaddr);
-  mcuSock->ReconnectSocket();
-  if(mcuSock->IsConnected())
-    _mcu_connstate = MCUCONNSTATE_CONNECTED;
-  else
+    mcuSock->ChangeAddress(mcuport, ipaddr);
+    mcuSock->ReconnectSocket();
+    if(mcuSock->IsConnected())
+      _mcu_connstate = MCUCONNSTATE_CONNECTED;
+    else
+      _mcu_connstate = MCUCONNSTATE_DISCONNECTED;
+    
+    printf("state %d\n", _mcu_connstate);
+    _sendMCUState();
+
+    if(_mcu_connstate == MCUCONNSTATE_DISCONNECTED){
+      _mcu_threadrun = false;
+      return;
+    }
+
+    // then handling the socket
+    while(mcuSock->IsConnected()){
+      checkMcuMessage();
+      std::this_thread::sleep_for(time_sleepsockthread);
+    }
+    
     _mcu_connstate = MCUCONNSTATE_DISCONNECTED;
-  
-  printf("state %d\n", _mcu_connstate);
-  _sendMCUState();
-
-  if(_mcu_connstate == MCUCONNSTATE_DISCONNECTED){
+    _sendMCUState();
     _mcu_threadrun = false;
-    return;
   }
-
-  // then handling the socket
-  while(mcuSock->IsConnected()){
-    checkMcuMessage();
-    std::this_thread::sleep_for(time_sleepsockthread);
+  catch(system_error e){
+    cout << e.what() << endl;
   }
-  
-  _mcu_connstate = MCUCONNSTATE_DISCONNECTED;
-  _sendMCUState();
-  _mcu_threadrun = false;
 }
 
 void _threadVis(){
@@ -283,6 +288,9 @@ void _threadVis(){
 void _startthreadMCU(){
   if(!_mcu_threadrun){
     _mcu_threadrun = true;
+
+    if(t_mcusock.joinable())
+      t_mcusock.join();
     t_mcusock = std::thread(_threadMCU);
   }
 }
@@ -291,6 +299,9 @@ void _startthreadVis(){
   if(!_vis_threadrun){
     _vis_threadrun = true;
     _vis_keepconnection = true;
+
+    if(t_vissock.joinable())
+      t_vissock.join();
     t_vissock = std::thread(_threadVis);
   }
 }

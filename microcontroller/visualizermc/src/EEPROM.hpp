@@ -67,6 +67,7 @@ class EEPROM_Class{
     // can write more than the pagesize, but it will send in async until all data is sent
     void bufWriteAsync(uint32_t address, char *buf, size_t buflen, EEPROM_Cb cb, void* obj);
 
+    // this function will be reading the fullsize of the data nonstop even after reading bytes with size of BUFFER_LENGTH
     size_t bufReadBlock_currAddr(char *buf, size_t buflen);
     size_t bufReadBlock(uint32_t address, char *buf, size_t buflen);
 

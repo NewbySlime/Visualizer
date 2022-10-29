@@ -91,7 +91,7 @@ class ByteIteratorR{
 
   public:
     ByteIteratorR(void *buffer, size_t datalength){
-      _datalength = buffer? datalength: 0; // TODO maybe give error
+      _datalength = buffer? datalength: 0;
       _data = reinterpret_cast<char*>(buffer);
       _dataidx = 0;
     }

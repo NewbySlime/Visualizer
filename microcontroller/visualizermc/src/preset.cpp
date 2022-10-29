@@ -2,10 +2,14 @@
 #include "color.hpp"
 #include "leddriver-master.hpp"
 
+#include "misc.hpp"
+
 
 #define R_IFFALSE(eval)\
-if(!eval)\
-  return false;
+if(!eval){\
+  Serial.printf("false when " #eval "\n");\
+  return false;\
+}
 
 #define _preseterrcheck(eval) \
 {preset_error err = eval;\
@@ -13,32 +17,168 @@ if(err & 0xff00)\
   return err;}
 
 
-#if defined(PRESET_USE_EEPROM)
-void presetData::_loadData(){
 
+preset *_new_def_preset(){
+  // rainbow representation in hex
+  color cols[] = {0xff0000, 0xffe900, 0x20ff00, 0x00fff3, 0x0800ff, 0xff00fb};
+  float ranges[] = {0.05f, 0.16f, 0.32f, 0.48f, 0.64f, 0.80f};
+  colorRanges colrange{cols, ranges, 6};
+  
+  
+  std::vector<part> splits; splits.push_back(part{
+    .start_led = 0,
+    .end_led = PRESET_CONST_LEDNUM,
+    .range_start = 0.0f,
+    .range_end = 1.0f,
+    .reversed = false,
+    .channel = 0
+  });
+
+  return new preset{
+    .presetName = "Default",
+    .colorMode = preset_colorMode::RGB_p,
+    .brightness = 1.0f,
+    .ValuePosx = 0.0f,
+    .speedChange = 0.1f,
+    .windowSlide = 0.1f,
+    .inUnion = false,
+    .colorShifting = preset_colorMode::RGB_p,
+    .brightnessMode = preset_brightnessMode::Individual,
+    .maxIntensity = 20.0f,
+    .minIntensity = 0.0f,
+    .colorRange = colrange,
+    .splitParts = splits
+  };
 }
 
-void presetData::_saveData(int idx){
 
+#if defined(PRESET_USE_EEPROM)
+
+#define _PRESET_FILECODE 0x0f00
+#define _PRESET_LASTFILECODE 0x1000
+#define _PRESET_MAXCOUNT 0xff
+
+
+presetData::presetData(){}
+
+void presetData::_updateFileCode(){
+  char *_datap = (char*)malloc(_presetLen);
+  for(size_t i = 0; i < _presetLen; i++)
+    _datap[i] = _fpreset_codes[i];
+  
+  FS.write_file(_PRESET_FILECODE, _datap, _presetLen);
+}
+
+void presetData::_loadData(){
+  if(FS.file_exist(_PRESET_FILECODE) && false){
+    FS.read_file(_PRESET_LASTFILECODE, reinterpret_cast<char*>(&_lastPreset), NULL, NULL);
+    FS.complete_tasks();
+
+    _presetLen = FS.file_size(_PRESET_FILECODE);
+    char *_datapc = (char*)malloc(_presetLen);
+    FS.read_file(_PRESET_FILECODE, _datapc, NULL, NULL);
+    FS.complete_tasks();
+
+    _fpreset_codes.resize(_presetLen);
+    for(size_t i = 0; i < _presetLen; i++)
+      _fpreset_codes[i] = _datapc[i];
+    
+    free(_datapc);
+  }
+  else{
+    _lastPreset = 0;
+    _presetLen = 1;
+    preset *_currentP = _new_def_preset();
+    _fpreset_codes.resize(1);
+    _fpreset_codes[0] = 1;
+
+    _updateFileCode();
+
+    size_t _datalen = presetSizeInBytes(*_currentP);
+    char *_data = (char*)malloc(_datalen);
+    copyToMemory(_data, _datalen, *_currentP);
+
+    FS.write_file(_PRESET_FILECODE | 1, _data, _datalen);
+
+    uint8_t *_lastp = (uint8_t*)malloc(sizeof(uint8_t));
+    *_lastp = _lastPreset;
+
+    FS.write_file(_PRESET_LASTFILECODE, reinterpret_cast<char*>(_lastp), sizeof(uint8_t));
+    
+    FS.complete_tasks();
+
+    delete _currentP;
+  }
+}
+
+preset_error presetData::_setData(int idx, preset &p){
+  if(idx >= _PRESET_MAXCOUNT)
+    return preset_error::max_preset_exceeded;
+  
+  size_t _datalen = presetSizeInBytes(p);
+  char *_data = (char*)malloc(_datalen);
+
+  copyToMemory(_data, _datalen, p);
+
+  auto _err = FS.write_file(_PRESET_FILECODE | (idx+1), _data, _datalen);
+  if(_err != fs_error::ok)
+    return preset_error::storage_fault;
+  return preset_error::no_error;
+}
+
+preset_error presetData::_resizePreset(uint16_t len){
+  if(len >= _PRESET_MAXCOUNT)
+    return preset_error::max_preset_exceeded;
+  
+  std::sort(_fpreset_codes.begin(), _fpreset_codes.end());
+  _fpreset_codes.reserve(len);
+
+  int prevn = 1;
+  for(int i = 0; i < len; i++){
+    if(prevn != _fpreset_codes[i]){
+      int _range = _fpreset_codes[i] - prevn;
+      auto _iter = _fpreset_codes.begin() + i;
+
+      for(int o = 0; o < _range && i < len; o++){
+        _iter = _fpreset_codes.insert(_iter, i+o+1);
+        i++;
+      }
+    }
+
+    if(i < len)
+      prevn = _fpreset_codes[i] + 1;
+  }
+
+  _updateFileCode();
+  return preset_error::no_error;
+}
+
+preset *presetData::_getData(int idx){
+  if(idx < 0 && idx >= _presetLen)
+    return NULL;
+  
+  // TODO set last used preset
+
+  uint16_t _fpcode = _PRESET_FILECODE | _fpreset_codes[idx];
+  size_t _datalen = FS.file_size(_fpcode);
+  char *_data = (char*)malloc(_datalen);
+  
+  FS.read_file(_fpcode, _data, NULL, NULL);
+  FS.complete_tasks();
+
+  preset *_currentPreset = new preset();
+  setPresetFromMem(_data, _datalen, *_currentPreset);
+
+  free(_data);
+  return _currentPreset;
 }
 
 preset_error presetData::_checkStorage(){
   return preset_error::no_error;
 }
 
-#elif defined(PRESET_USE_SDCARD)
-void presetData::_loadData(){
-
-}
-
-void presetData::_saveData(int idx){
-
-}
-
-preset_error presetData::_checkStorage(){
-  
-}
-
+// TODO code review for not using storage
+//  in getPreset, it will create another object, so don't use 
 #else
 #ifndef PRESET_CONST_LEDNUM
 #error Please define how many led if using hardcoded preset
@@ -57,36 +197,7 @@ void presetData::_loadData(){
   _presetLen = 1;
   _lastPreset = 0;
 
-  // rainbow representation in hex
-  color cols[] = {0xff0000, 0xffe900, 0x20ff00, 0x00fff3, 0x0800ff, 0xff00fb};
-  float ranges[] = {0.05f, 0.16f, 0.32f, 0.48f, 0.64f, 0.80f};
-  colorRanges colrange{cols, ranges, 6};
-  
-  
-  std::vector<part> splits; splits.push_back(part{
-    .start_led = 0,
-    .end_led = PRESET_CONST_LEDNUM,
-    .range_start = 0.0f,
-    .range_end = 1.0f,
-    .reversed = false,
-    .channel = 0
-  });
-
-  _presets[0] = new preset{
-    .presetName = "Default",
-    .colorMode = preset_colorMode::Sound,
-    .brightness = 1.0f,
-    .ValuePosx = 0.0f,
-    .speedChange = 0.1f,
-    .windowSlide = 0.1f,
-    .inUnion = false,
-    .colorShifting = preset_colorMode::RGB_p,
-    .brightnessMode = preset_brightnessMode::Individual,
-    .maxIntensity = 20.0f,
-    .minIntensity = 0.0f,
-    .colorRange = colrange,
-    .splitParts = splits
-  };
+  _presets[0] = _new_def_preset();
 }
 
 preset_error presetData::_setData(int idx, preset &p){
@@ -141,15 +252,6 @@ preset_error presetData::setPreset(uint16_t idx, preset &p){
   return _setData(idx, p);
 }
 
-preset_error presetData::updatePreset(uint16_t idx){
-  if(idx >= 0 && idx < _presetLen)
-    _saveData(idx);
-  else
-    return preset_error::wrong_index;
-  
-  return preset_error::no_error;
-}
-
 preset_error presetData::resizePreset(uint16_t len){
   _lastPreset = 0;
   return _resizePreset(len);
@@ -192,6 +294,8 @@ size_t presetData::presetSizeInBytes(preset &p){
 
 size_t presetData::copyToMemory(ByteIteratorR &memwrite, preset& p){
   Serial.printf("Calling bir's preset\n");
+  Serial.printf("memwrite %d\n", memwrite.available());
+  
 
   if(memwrite.available() < presetSizeInBytes(p))
     return 0;
@@ -202,6 +306,7 @@ size_t presetData::copyToMemory(ByteIteratorR &memwrite, preset& p){
   char *dummychar = (char*)calloc(sizeof(char), MAX_PRESET_NAME_LENGTH-p.presetName.size());
   R_IFFALSE(memwrite.setVar(dummychar, MAX_PRESET_NAME_LENGTH-p.presetName.size()));
   free(dummychar);
+  Serial.printf("memwrite %d\n", memwrite.available());
   
   R_IFFALSE(memwrite.setVar(p.colorMode));
   R_IFFALSE(memwrite.setVar(p.brightness));
@@ -214,8 +319,14 @@ size_t presetData::copyToMemory(ByteIteratorR &memwrite, preset& p){
   R_IFFALSE(memwrite.setVar(p.maxIntensity));
   R_IFFALSE(memwrite.setVar(p.minIntensity));
 
+  Serial.printf("memwrite %d\n", memwrite.available());
+
   R_IFFALSE(memwrite.setVar((uint16_t)p.colorRange.colors.size()));
-  R_IFFALSE(memwrite.setVar(p.colorRange.colors, p.colorRange.colors.size()));
+  for(auto col: p.colorRange.colors){
+    R_IFFALSE(memwrite.setVar(col.first));
+    R_IFFALSE(memwrite.setVar(col.second));
+  }
+
   R_IFFALSE(memwrite.setVar((uint16_t)p.splitParts.size()));
   for(int i = 0; i < p.splitParts.size(); i++)
     R_IFFALSE(presetData::copyPartToMemory(memwrite, p.splitParts[i]));
@@ -255,6 +366,9 @@ bool presetData::setPresetFromMem(ByteIterator &bi, preset &p){
   // getting color range data
   p.colorRange.colors.clear();
   uint16_t colorlen; R_IFFALSE(bi.getVar(colorlen));
+  if(colorlen > MAX_PRESET_COLOR)
+    return false;
+
   p.colorRange.colors.reserve(colorlen);
   for(int i = 0; i < colorlen; i++){
     float range{}; R_IFFALSE(bi.getVar(range));
@@ -267,6 +381,9 @@ bool presetData::setPresetFromMem(ByteIterator &bi, preset &p){
   // getting split parts data
   p.splitParts.clear();
   uint16_t partlen; R_IFFALSE(bi.getVar(partlen));
+  if(partlen > MAX_PRESET_PART)
+    return false;
+
   p.splitParts.resize(partlen);
   for(int i = 0; i < partlen; i++)
     R_IFFALSE(presetData::setPartFromMem(bi, p.splitParts[i]));
@@ -275,6 +392,24 @@ bool presetData::setPresetFromMem(ByteIterator &bi, preset &p){
   std::sort(p.splitParts.begin(), p.splitParts.end(), __cmp1);
 
   return true;
+}
+
+size_t presetData::presetSizeInBytes(int idx){
+#if defined(PRESET_USE_EEPROM)
+  if(idx >= _PRESET_MAXCOUNT)
+    return 0;
+
+  return FS.file_size(_PRESET_FILECODE | _fpreset_codes[idx]);
+#else
+  preset *data = getPreset(idx);
+  if(!data)
+    return 0;
+
+  size_t res = presetSizeInBytes(*data);
+  delete data;
+
+  return res;
+#endif
 }
 
 size_t presetData::copyPartToMemory(ByteIteratorR &bir, part &p){

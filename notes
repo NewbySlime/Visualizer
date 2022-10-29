@@ -1,0 +1,2 @@
+Async and blocking
+  Despite some blocking functions actually still using async, there's a reason why I still put this. In case when a function needs to stay running even if the current task is actually blocking, so it needs async function not blocking function.

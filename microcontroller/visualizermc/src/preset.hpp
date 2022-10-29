@@ -22,7 +22,8 @@ enum preset_error{
   max_preset_exceeded,
   max_name_exceeded,
   wrong_index,
-  data_insufficient
+  data_insufficient,
+  storage_fault
 };
 
 enum preset_colorMode{
@@ -71,15 +72,20 @@ struct preset{
 class presetData{
   private:
     int _lastPreset;
-
-    #if !defined(PRESET_USE_EEPROM) && !defined(PRESET_USE_SDCARD)
-    preset **_presets;
     int _presetLen;
-    #endif
+
+#if defined(PRESET_USE_EEPROM)
+    std::vector<uint8_t> _fpreset_codes;
+
+    void _updateFileCode();
+#else
+    preset **_presets;
+#endif
 
     preset_error _checkStorage();
+
+    // function only called once
     void _loadData();
-    preset_error _saveData(int idx);
     preset_error _setData(int idx, preset &p);
     preset_error _resizePreset(uint16_t len);
     preset *_getData(int idx);
@@ -89,7 +95,6 @@ class presetData{
 
     preset_error initPreset();
     preset_error setPreset(uint16_t idx, preset &p);
-    preset_error updatePreset(uint16_t idx);
 
     // this will delete all preset data
     preset_error resizePreset(uint16_t len);
@@ -112,7 +117,10 @@ class presetData{
       if(!data)
         return 0;
 
-      return copyToMemory(memwrite, *getPreset(idx));
+      size_t res = copyToMemory(memwrite, *data);
+      delete data;
+
+      return res;
     }
 
     size_t copyToMemory(char *buffer, size_t datalen, uint16_t idx){
@@ -120,7 +128,10 @@ class presetData{
       if(!data)
         return 0;
       
-      return copyToMemory(buffer, datalen, *getPreset(idx));
+      size_t res = copyToMemory(buffer, datalen, *data);
+      delete data;
+
+      return res;
     }
 
     static bool setPresetFromMem(ByteIterator &bi, preset &p);
@@ -130,13 +141,7 @@ class presetData{
     }
 
     static size_t presetSizeInBytes(preset &p);
-    size_t presetSizeInBytes(int idx){
-      preset *data = getPreset(idx);
-      if(!data)
-        return 0;
-
-      return presetSizeInBytes(*getPreset(idx));
-    }
+    size_t presetSizeInBytes(int idx);
 
     static size_t copyPartToMemory(ByteIteratorR &bir, part &p);
     static size_t copyPartToMemory(char *buffer, size_t datasize, part &p){

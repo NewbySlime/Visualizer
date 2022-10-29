@@ -169,6 +169,10 @@ class file_system{
     // defragging the storage
     // will not return ok if the frag percentage is 0
     fs_error storage_defrag();
+
+    void complete_tasks();
 };
+
+extern file_system FS;
 
 #endif

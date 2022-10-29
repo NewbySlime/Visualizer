@@ -184,6 +184,9 @@ const color *visualizer::getData(){
 }
 
 void visualizer::usePreset(int idx){
+  if(!_currentPreset)
+    delete _currentPreset;
+
   _currentPreset = PresetData.getPreset(idx);
   if(!_currentPreset){
     importantText("Can't use preset, could be corrupted.");

@@ -9,6 +9,8 @@
 #include "polling.h"
 #include "debug.hpp"
 
+#include "async.hpp"
+
 #define BUF_MAX 16
 
 
@@ -89,7 +91,8 @@ void EEPROM_Class::_timer_bufWrite(){
   else{
     _ready_use = true;
     DEBUG_PRINT("calling\n");
-    _cb(_classobj);
+    if(_cb)
+      _cb(_classobj);
     DEBUG_PRINT("done calling\n");
   }
 }
@@ -100,12 +103,14 @@ void EEPROM_Class::_polling_bufRead(){
   else{
     polling_removefunc(this);
     _ready_use = true;
-    _cb(_classobj);
+    if(_cb)
+      _cb(_classobj);
   }
 }
 
 size_t EEPROM_Class::bufWriteBlock(uint32_t address, char *buf, size_t buflen){
   if(_ready_use){
+    /*
     _memlimit = false;
 
     size_t _bytesent = 0;
@@ -113,8 +118,12 @@ size_t EEPROM_Class::bufWriteBlock(uint32_t address, char *buf, size_t buflen){
       _bytesent += _bufWrite(address+_bytesent, buf+_bytesent, buflen-_bytesent);
       delay(_delayms);
     }
+    */
 
-    return _bytesent;
+    bufWriteAsync(address, buf, buflen, NULL, NULL);
+    YieldWhile(!_ready_use);
+
+    return _t_bytesent;
   }
 
   return 0;
@@ -153,7 +162,6 @@ size_t EEPROM_Class::bufReadBlock(uint32_t address, char *buf, size_t buflen){
   if(_ready_use){
     _memlimit = false;
     _seekAddress(address);
-    delay(_delayms);
     return bufReadBlock_currAddr(buf, buflen);
   }
 

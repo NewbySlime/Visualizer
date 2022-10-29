@@ -5,6 +5,8 @@
 
 #include "algorithm"
 
+#include "async.hpp"
+
 #define FILESYSTEM_HEADERCODE 0x1632
 
 
@@ -42,7 +44,9 @@ void file_system::_on_donewr(){
         DEBUG_PRINT("\tstate: done_r\n");
         // calling to specified callback
         read_queue *_rq = reinterpret_cast<read_queue*>(queue_edit[0]);
-        _rq->cb(_rq->obj);
+
+        if(_rq->cb)
+          _rq->cb(_rq->obj);
 
         _rq->_q = _queue_enum::done;
         _on_donewr();
@@ -522,3 +526,10 @@ fs_error file_system::storage_defrag(){
 
   return fs_error::ok;
 }
+
+void file_system::complete_tasks(){
+  YieldWhile(queue_edit.size() && is_busy());
+}
+
+
+file_system FS;

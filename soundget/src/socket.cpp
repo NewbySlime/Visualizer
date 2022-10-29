@@ -8,11 +8,14 @@
 #include "thread"
 #include "chrono"
 
+
 #define WS_SELECTREAD 0
 #define WS_SELECTWRITE 1
 #define WS_SELECTEXCEPT 2
 
 #define SOCKET_TIMEOUTMS 5000  // 5 s
+
+#define SOCKET_RECONNECTTRIES 10
 
 
 const int MAXTIMESRESPUDP = 32;
@@ -119,6 +122,7 @@ void SocketHandler_Sync::_onnotresponding(){
   else{
     auto _finishtime = std::chrono::high_resolution_clock::now();
     long deltams = (_finishtime-_starttimeout).count()/1000000;
+    //printf("deltams %ld\n", deltams);
 
     if(deltams > SOCKET_TIMEOUTMS){
       stopSending = true;
@@ -215,12 +219,13 @@ void SocketHandler_Sync::ReconnectSocket(){
   std::lock_guard<std::mutex> _lock(sMutex);
   currSock = socket(AF_INET, SOCK_STREAM, 0);
   
-  int i = 0;
   lastErrcode = connect(currSock, (sockaddr*)hostAddress, sizeof(*hostAddress));
-  lastErrcode = send(currSock, reinterpret_cast<const char*>(&PINGMESSAGE), sizeof(unsigned short), 0);
-  if(_checkrecv()){
-    _responded = true;
-    stopSending = false;
+  for(int i = 0; i < SOCKET_RECONNECTTRIES; i++){
+    lastErrcode = send(currSock, reinterpret_cast<const char*>(&PINGMESSAGE), sizeof(unsigned short), 0);
+    if(_checkrecv()){
+      _responded = true;
+      stopSending = false;
+    }
   }
 }
 

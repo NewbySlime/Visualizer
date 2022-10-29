@@ -34,7 +34,7 @@ using namespace std;
 #define USEPORT 3020
 
 #define VIS_DEFRATE 27
-#define TWI_DEFAULTCLK 400000
+#define TWI_DEFAULTCLK 100000
 
 #define LED_NUM 2
 
@@ -150,6 +150,8 @@ uint16_t _presetcount;
 int _presettimerid;
 uint16_t _presetuseidx;
 
+AT24C256 _eeprom(0b1010000);
+
 
 
 void _init_list(){
@@ -212,14 +214,26 @@ void _sendPresetData(int idx){
     PresetData.presetSizeInBytes(idx)
   ;
 
+  Serial.printf("psize %d\n", psize);
+
   char *presetmem = (char*)malloc(psize);
   ByteIteratorR _bir{presetmem, psize};
   _bir.setVar(FORWARD);
   _bir.setVar(MCU_SETPRESET);
   _bir.setVar((uint16_t)idx);
 
+  Serial.printf("Getting preset idx: %d\n");
+
   size_t actualSize = PresetData.copyToMemory(_bir, idx);
+  for(int i = 0; i < psize; i++){
+    if((i % 16) == 0)
+      Serial.printf("\nidx %d 0x%X\n\t", i, i);
+    
+    Serial.printf("0x%X ", presetmem[i]);
+  }
+
   if(actualSize == 0){
+    Serial.printf("something wrong when copying preset.\n");
     free(presetmem);
     return;
   }
@@ -820,9 +834,9 @@ void setup() {
   #ifdef DO_TEST_SKETCH
   delay(10000);
   //test_sending(NULL);
-  //test_eeprom();
+  test_eeprom();
 
-  test_eeprom2();
+  //test_eeprom2();
 
   /*
   Serial.begin(9600);
@@ -833,12 +847,17 @@ void setup() {
   */
   #else
 
+  Serial.printf("test\n");
   delay(5000);
   Serial.begin(9600);
 
+  Serial.printf("test\n");
+
   Wire.begin();
   Wire.setClock(TWI_DEFAULTCLK);
-  test_sending(NULL);
+  //test_sending(NULL);
+
+  FS.bind_storage(&_eeprom);
 
   // setting up wifi
   // using WIFI_STA too slow after some time?
