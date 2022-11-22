@@ -121,7 +121,7 @@ void file_system::_on_donewr(){
         // writing to storage
         bound_storage->bufWriteAsync(_fi->low_bound, _wq->data, _wq->datasize, __on_donewr, this);
 
-        // then update the bounds in the file_info and storage
+        // update the bounds in the file_info and storage
         _wq->_q = update_bounds;
       }
 
@@ -135,12 +135,18 @@ void file_system::_on_donewr(){
         DEBUG_PRINT("lb %d, hb %d\n", _fi->low_bound, _fi->high_bound);
 
         ByteIteratorR _bir{_tmpdata, _tmpdatasize};
-        _bir.setVar(reinterpret_cast<char*>(&_fi->id), _sizebytes);
-        _bir.setVar(reinterpret_cast<char*>(&_fi->low_bound), _sizebytes);
-        _bir.setVar(reinterpret_cast<char*>(&_fi->high_bound), _sizebytes);
+        _bir.setVarStr(reinterpret_cast<char*>(&_fi->id), _sizebytes);
+        _bir.setVarStr(reinterpret_cast<char*>(&_fi->low_bound), _sizebytes);
+        _bir.setVarStr(reinterpret_cast<char*>(&_fi->high_bound), _sizebytes);
 
         bound_storage->bufWriteAsync(_fi->file_info_address, _tmpdata, _tmpdatasize, __on_donewr, this);
-        _wq->_q = done;
+
+        if(_update_filecount){
+          _update_filecount = false;
+          _wq->_q = update_filecount;
+        }
+        else
+          _wq->_q = done;
       }
 
 
@@ -203,18 +209,26 @@ void file_system::_on_donewr(){
 
         ByteIteratorR _bir{_tmpdata, _tmpdatasize};
         uint32_t _fsize = f_info.size();
-        _bir.setVar(reinterpret_cast<char*>(&_fsize), _sizebytes);
+        _bir.setVarStr(reinterpret_cast<char*>(&_fsize), _sizebytes);
         
         for(int i = 0; i < f_info.size(); i++){
           f_info[i].file_info_address = _addr;
           _addr += _fileinfo_size();
 
-          _bir.setVar(reinterpret_cast<char*>(&f_info[i].id), _sizebytes);
-          _bir.setVar(reinterpret_cast<char*>(&f_info[i].low_bound), _sizebytes);
-          _bir.setVar(reinterpret_cast<char*>(&f_info[i].high_bound), _sizebytes);
+          _bir.setVarStr(reinterpret_cast<char*>(&f_info[i].id), _sizebytes);
+          _bir.setVarStr(reinterpret_cast<char*>(&f_info[i].low_bound), _sizebytes);
+          _bir.setVarStr(reinterpret_cast<char*>(&f_info[i].high_bound), _sizebytes);
         }
 
-        bound_storage->bufWriteAsync(_header_size(), _tmpdata, _tmpdatasize, __on_donewr, this);
+        bound_storage->bufWriteAsync(_header_size()+_sizebytes, _tmpdata, _tmpdatasize, __on_donewr, this);
+        queue_edit[0][0] = done;
+      }
+
+      break; case update_filecount:{
+        DEBUG_PRINT("\tstate: update_filecount\n");
+        size_t *_fsize = (size_t*)malloc(sizeof(size_t));
+        *_fsize = f_info.size();
+        bound_storage->bufWriteAsync(_header_size(), reinterpret_cast<char*>(_fsize), _sizebytes, __on_donewr, this);
         queue_edit[0][0] = done;
       }
     }
@@ -241,9 +255,9 @@ void file_system::_finishwr(){
         size_t _fisize = _fileinfo_size();
         char *_data = (char*)malloc(_fisize);
         ByteIteratorR _w{_data, _fisize};
-        _w.setVar(reinterpret_cast<char*>(&_fiiter->id), _sizebytes);
-        _w.setVar(reinterpret_cast<char*>(&_fiiter->low_bound), _sizebytes);
-        _w.setVar(reinterpret_cast<char*>(&_fiiter->high_bound), _sizebytes);
+        _w.setVarStr(reinterpret_cast<char*>(&_fiiter->id), _sizebytes);
+        _w.setVarStr(reinterpret_cast<char*>(&_fiiter->low_bound), _sizebytes);
+        _w.setVarStr(reinterpret_cast<char*>(&_fiiter->high_bound), _sizebytes);
         _fiiter->file_info_address = _fi->file_info_address;
 
         bound_storage->bufWriteBlock(_fiiter->file_info_address, _data, _fisize);
@@ -252,9 +266,6 @@ void file_system::_finishwr(){
       f_info.erase(f_info.begin() + i);
     }
   }
-
-  size_t _nsize = f_info.size();
-  bound_storage->bufWriteBlock(_header_size(), reinterpret_cast<char*>(&_nsize), _sizebytes);
 
   _notready = false;
 }
@@ -271,7 +282,7 @@ size_t file_system::__header_fullsize(size_t _s){
   return
     _header_size() +                              // header
     _sizebytes +                                  // file_info array size
-    (_fileinfo_size() * _s)            // file_info array
+    (_fileinfo_size() * _s)                       // file_info array
   ;
 }
 
@@ -333,8 +344,7 @@ fs_error file_system::init_storage(EEPROM_Class *storage){
   return fs_error::ok;
 }
 
-fs_error file_system::
-bind_storage(EEPROM_Class *storage){
+fs_error file_system::bind_storage(EEPROM_Class *storage){
   if(_notready)
     return fs_error::storage_busy;
   
@@ -387,6 +397,11 @@ bind_storage(EEPROM_Class *storage){
   DEBUG_PRINT("_currentsize %d\n", _future_storagesize);
 
   std::sort(f_info.begin(), f_info.end());
+
+  DEBUG_PRINT("file count %d\n", f_info.size());
+  for(int i = 0; i < f_info.size(); i++)
+    DEBUG_PRINT("file id 0x%X\n", f_info[i].id);
+
   bound_storage = storage;
   _future_storagesize -= _header_fullsize();
   DEBUG_PRINT("_currentsize %d\n", _future_storagesize);
@@ -441,6 +456,9 @@ fs_error file_system::write_file(uint16_t file_id, char *data, size_t datasize){
 
   // if file_id not found, then add the file_id to storage
   if(!_fi){
+    DEBUG_PRINT("File id %X not found.\n", file_id);
+    _update_filecount = true;
+
     file_info __ficomp{
       .id = file_id,
       .file_info_address = _header_fullsize(),
@@ -528,8 +546,8 @@ fs_error file_system::storage_defrag(){
 }
 
 void file_system::complete_tasks(){
-  YieldWhile(queue_edit.size() && is_busy());
+  YieldWhile(is_busy());
 }
 
 
-file_system FS;
+file_system EEPROM_FS;

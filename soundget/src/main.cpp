@@ -2,9 +2,13 @@
 #include "soundget.hpp"
 #include "initquit.hpp"
 #include "ByteIterator.hpp"
+
+#include "algorithm"
 #include "conio.h"
 #include "map"
 #include "exception"
+#include "fstream"
+#include "string.h"
 
 #include "windowsx.h"
 #include "libloaderapi.h"
@@ -23,7 +27,13 @@
 
 #define MAIN_WINDOWCLASS L"viswndclass"
 
-#define IDM_QUIT 0
+#define MCU_ENCRYPTIONKEY_LISTMAX 16
+#define MCU_ENCRYPTIONKEY_MAXSTR 128
+#define MCU_ENCRYPTIONKEY_DATAFILEPATH "key.bin"
+#define MCU_HANDSHAKETIMOUT 5
+
+#define WND_MAINCODEMENU 0x00
+#define WND_DEVCODEMENU 0x01
 
 
 // codes for controlling this program
@@ -41,6 +51,7 @@ const unsigned short
   // start sending the data (from and only mcu)
   SOUNDDATA_STARTSENDING = 0x0012,
   // forwarding to mcu / to the tool
+  // or can be used to set mcu variables without using tool
   FORWARD = 0x0020,
   // configuring the soundget system
   SET_CONFIG_SG = 0x0021,
@@ -52,7 +63,14 @@ const unsigned short
   CONNECT_MCU_STATE = 0x0030,
   // setting mcu ip address and port
   SETMCU_ADDRESS = 0x0031,
-  GETMCU_ADDRESS = 0x0032
+  GETMCU_ADDRESS = 0x0032,
+
+  // --   Codes that will not be encrypted    --
+  // MCU pairing
+  // will be send first when connecting to MCU when it's on pairing mode
+  MCU_PAIR = 0x0100,
+  // Message to connect to MCU
+  MCU_CONNECT = 0x101
 ;
 
 
@@ -81,6 +99,12 @@ const unsigned short
 ;
 
 
+// codes for forward codes / setting up mcu variables
+const unsigned short
+  MCU_SETTIME = 0x103
+;
+
+
 // codes for connecting state
 const unsigned char
   MCUCONNSTATE_CONNECTED = 0x01,
@@ -89,11 +113,9 @@ const unsigned char
   MCUCONNSTATE_REQUESTSTATE = 0x04
 ;
 
-// port for connecting to tool or mcu
-const unsigned short port = 3022;
-const unsigned short mcuport = 3020;
 
 const auto time_sleepsockthread = std::chrono::milliseconds(1000/SOCKET_MSGPOLL);
+
 
 
 struct Socket_MessageCallbacks{
@@ -102,6 +124,14 @@ struct Socket_MessageCallbacks{
 
     // <code, <callback, callback's param count>>
     std::map<unsigned short, std::pair<void (*)(char**, int*), int>> callbacks;
+};
+
+
+enum PopupMenu_ChoiceEnum{
+  ce_runeditor,
+  ce_changeDev,
+  ce_quit,
+  ce___enumlen
 };
 
 
@@ -114,6 +144,10 @@ unsigned short DO_TEST = 0x3;
 unsigned short DO_MTPLY = 0x4;
 int DO_MTPLY_sizemsg = sizeof(unsigned short)+sizeof(int)+sizeof(int);
 
+// port for connecting to tool or mcu
+unsigned short port = 3022;
+unsigned short mcuport = 3020;
+
 // led count is the same as num band count
 uint32_t _mcu_ledcount = 0;
 uint32_t _mcu_ipaddr;
@@ -121,7 +155,11 @@ uint16_t _mcu_port = mcuport;
 uint8_t _mcu_connstate = MCUCONNSTATE_DISCONNECTED;
 bool _mcu_sendsg = false;
 bool _mcu_previouslyConnected = false;
+bool _mcu_handshaked = false;
 bool _vis_previouslyConnected = false;
+
+data_encryption _mcu_cryptkey;
+std::vector<std::pair<char*, size_t>> _mcu_list_cryptkey;
 
 bool _mcu_threadrun = false;
 bool _vis_threadrun = false;
@@ -135,6 +173,19 @@ SoundGet *sg;
 
 Socket_MessageCallbacks *progSock_cbs;
 
+STARTUPINFOA _vissinfo;
+PROCESS_INFORMATION _vispinfo;
+std::string _vispathstr;
+
+std::thread _rv_thread;
+bool _rv_isrunning = false;
+
+
+
+
+
+/*      FUNCTION DECLARATIONS     */
+void sendMcuData(const void *data, size_t datalen);
 
 
 
@@ -144,6 +195,9 @@ Socket_MessageCallbacks *progSock_cbs;
 LRESULT mainWindProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 void initProgram(){
   CoInitializeEx(NULL, COINIT_MULTITHREADED);
+
+  ZeroMemory(&_vissinfo, sizeof(_vissinfo));
+  ZeroMemory(&_vispinfo, sizeof(_vispinfo));
 
   hInst = GetModuleHandle(NULL);
 
@@ -190,7 +244,7 @@ void initProgram(){
 
   DestroyIcon(hIcon);
 }
-_ProgInitFunc _pifp(initProgram);
+PROGINITFUNC(initProgram);
 
 
 void closeProgram(){
@@ -209,7 +263,7 @@ void closeProgram(){
 
   CoUninitialize();
 }
-_ProgQuitFunc _pqfp(closeProgram);
+PROGQUITFUNC(closeProgram);
 
 // TODO
 // checking if there's a change in the devices of the soundget
@@ -220,6 +274,149 @@ void CheckSGDevices(){
 void QuitProgram(){
   PostMessageW(mWnd, WM_QUIT, 0, 0);
 }
+
+
+/*      Getting Config      */
+void _getConfigData(){
+  /*    Data set    */
+  std::map<std::string, void(*)(std::string&)> _cfgmap{
+    {"vis_path", [](std::string& v){
+        _vispathstr = v;
+      }
+    },
+
+    {"editor_port", [](std::string &v){
+        port = stoi(v);
+      }
+    },
+
+    {"default_mcuport", [](std::string &v){
+        mcuport = stoi(v);
+      }
+    }
+  };
+
+
+
+  /*    Start of Function   */
+  std::ifstream ifs;
+  ifs.open("config.cfg");
+  
+  bool loop = true;
+  while(loop){
+    std::string attr_name = "", attr_value = "";
+    bool _assignment = false;
+    char c = 0;
+
+    while(true){
+      c = ifs.peek();
+      if((c == ' ' || c == '\n') && !ifs.eof())
+        ifs.read(&c, 1);
+      else
+        break;
+    }
+
+    ifs >> attr_name;
+
+    while(true){
+      c = ifs.peek();
+      if((c == ' ' || c == '\n' || c == '=') && !ifs.eof()){
+        ifs.read(&c, 1);
+
+        if(c == '=')
+          _assignment = true;
+      }
+      else
+        break;
+    }
+
+    if(_assignment){
+      ifs >> attr_value;
+
+      while(true){
+        c = ifs.peek();
+        if(c != ' ' && c != '\n' && !ifs.eof())
+          ifs.read(&c, 1);
+        else
+          break;
+      }
+    }
+
+    auto _iter = _cfgmap.find(attr_name);
+    if(_iter != _cfgmap.end())
+      _iter->second(attr_value);
+    else
+      printf("Config's attribute name \'%s\' is invalid.\n", attr_name.c_str());
+    
+    if(ifs.eof())
+      break;
+  }
+}
+PROGINITFUNC(_getConfigData);
+
+
+void _getMCUkeyList(){
+  _mcu_list_cryptkey.resize(0);
+  _mcu_list_cryptkey.reserve(MCU_ENCRYPTIONKEY_LISTMAX);
+
+  std::ifstream _ifs; _ifs.open(MCU_ENCRYPTIONKEY_DATAFILEPATH, _ifs.binary);
+  if(_ifs.fail()){
+    printf("Key file %s cannot be opened.\n", MCU_ENCRYPTIONKEY_DATAFILEPATH);
+    return;
+  }
+
+  uint16_t _listsize; _ifs.read(reinterpret_cast<char*>(&_listsize), sizeof(uint16_t));
+  for(int i = 0; i < _listsize && !_ifs.eof() && _mcu_list_cryptkey.size() < MCU_ENCRYPTIONKEY_LISTMAX; i++){
+    uint16_t _keylen; _ifs.read(reinterpret_cast<char*>(&_keylen), sizeof(_keylen));
+    if(_keylen > MCU_ENCRYPTIONKEY_MAXSTR || _keylen == 0){
+      printf("%s seems like to be corrupted. But will use some of the key.\n", MCU_ENCRYPTIONKEY_DATAFILEPATH);
+      break;
+    }
+    
+    char *_key = (char*)malloc(_keylen);
+    _ifs.read(_key, _keylen);
+
+    _mcu_list_cryptkey.insert(_mcu_list_cryptkey.end(), {_key, _keylen});
+  }
+
+  _ifs.close();
+}
+PROGINITFUNC(_getMCUkeyList);
+
+
+void _closing_MCUkeyList(){
+  for(int i = 0; i < _mcu_list_cryptkey.size(); i++)
+    free(_mcu_list_cryptkey[i].first);
+}
+PROGQUITFUNC(_closing_MCUkeyList);
+
+
+
+
+
+/*      Updating Functions      */
+void _update_mcu_list_cryptkey(){
+  std::ofstream _ofs; _ofs.open(MCU_ENCRYPTIONKEY_DATAFILEPATH, _ofs.trunc | _ofs.binary);
+
+  uint16_t _listsize = _mcu_list_cryptkey.size();
+  _ofs.write(reinterpret_cast<const char*>(&_listsize), sizeof(uint16_t));
+  printf("cryptkey list %d\n", _mcu_list_cryptkey.size());
+
+  for(int i = 0; i < _mcu_list_cryptkey.size(); i++){
+    auto _pk = _mcu_list_cryptkey[i];
+    uint16_t _keylen = _pk.second;
+    
+    printf("writing len %d key %s\n", _keylen, _pk.first);
+
+    _ofs.write(reinterpret_cast<const char*>(&_keylen), sizeof(uint16_t));
+    _ofs.write(_pk.first, _keylen);
+
+    _ofs.flush();
+  }
+
+  _ofs.close();
+}
+
 
 
 
@@ -246,13 +443,10 @@ void _threadMCU(){
 
     mcuSock->ChangeAddress(mcuport, ipaddr);
     mcuSock->ReconnectSocket();
-    if(mcuSock->IsConnected())
-      _mcu_connstate = MCUCONNSTATE_CONNECTED;
-    else
+    if(!mcuSock->IsConnected()){
       _mcu_connstate = MCUCONNSTATE_DISCONNECTED;
-    
-    printf("state %d\n", _mcu_connstate);
-    _sendMCUState();
+      _sendMCUState();
+    }
 
     if(_mcu_connstate == MCUCONNSTATE_DISCONNECTED){
       _mcu_threadrun = false;
@@ -260,7 +454,16 @@ void _threadMCU(){
     }
 
     // then handling the socket
+    auto _timestart = std::chrono::high_resolution_clock::now();
     while(mcuSock->IsConnected()){
+      if(!_mcu_handshaked){
+        auto _currtime = std::chrono::high_resolution_clock::now();
+        if((_currtime-_timestart) > std::chrono::seconds(MCU_HANDSHAKETIMOUT)){
+          mcuSock->Disconnect();
+          break;
+        }
+      }
+
       checkMcuMessage();
       std::this_thread::sleep_for(time_sleepsockthread);
     }
@@ -269,8 +472,8 @@ void _threadMCU(){
     _sendMCUState();
     _mcu_threadrun = false;
   }
-  catch(system_error e){
-    cout << e.what() << endl;
+  catch(std::system_error e){
+    std::cout << e.what() << std::endl;
   }
 }
 
@@ -346,9 +549,9 @@ void SendInDevicesName(){
   _bir.setVar((uint16_t)devdata->size());
 
   for(int i = 0; i < devdata->size(); i++){
-    const string *devname = &devdata->operator[](i).deviceName;
+    const std::string *devname = &devdata->operator[](i).deviceName;
     _bir.setVar((uint32_t)devname->size());
-    _bir.setVar(devname->c_str(), devname->size());
+    _bir.setVarStr(devname->c_str(), devname->size());
   }
 
   {LockSocket(progSock);
@@ -362,7 +565,7 @@ void SendInDevicesName(){
 
 void SendInDeviceData(int idx = -1){
   int currentIndex = idx < 0 || idx >= sg->GetDevices()->size()? sg->GetIndex(): idx;
-  const string *devname = &sg->GetDevices()->operator[](currentIndex).deviceName;
+  const std::string *devname = &sg->GetDevices()->operator[](currentIndex).deviceName;
   auto wvf = sg->GetWaveFormat();
 
   int datalen = 
@@ -377,7 +580,7 @@ void SendInDeviceData(int idx = -1){
   ByteIteratorR _bir(datastr, datalen);
   _bir.setVar(currentIndex);
   _bir.setVar((int)devname->size());
-  _bir.setVar(devname->c_str(), devname->size());
+  _bir.setVarStr(devname->c_str(), devname->size());
   _bir.setVar(wvf->nChannels);
 
   {LockSocket(progSock);
@@ -441,10 +644,6 @@ void onMsgGet_SetConfigSG(char **buffer, int *buflength){
   }
 }
 
-void onMsgGet_StopProg(char **buffer, int *buflength){
-  QuitProgram();
-}
-
 void onMsgGet_StopSoundget(char **buffer, int *buflength){
   sg->StopListening();
 }
@@ -455,16 +654,18 @@ void onMsgGet_StartSoundget(char **buffer, int *buflength){
 
 void onMsgGet_ForwardMC(char **buffer, int *buflength){
   int len = sizeof(uint16_t)+buflength[0];
-  char *_buf = (char*)malloc(len);
+  char _buf[len];
 
   printf("datalen %d\n", buflength[0]);
-  ByteIteratorR _bir(_buf, len);
+  printf("byte dump: ");
+  for(int i = 0; i < buflength[0]; i++)
+    printf("%X ", buffer[0][i]);
+    
+  ByteIteratorR_Encryption _bir(_buf, len, &_mcu_cryptkey);
   _bir.setVar(FORWARD);
-  _bir.setVar(buffer[0], buflength[0]);
+  _bir.setVarStr(buffer[0], buflength[0]);
 
-  {LockSocket(mcuSock);
-    mcuSock->SendData(_buf, len);
-  }
+  sendMcuData(_buf, len);
 }
 
 void onMsgGet_GetConfigSG(char **buffer, int *buflength){
@@ -548,29 +749,51 @@ void onMsgGet_GetMCUAddress(char **buffer, int *buflength){
   }
 }
 
+void onMsgGet_StopProg(char **buffer, int *buflength){
+  QuitProgram();
+}
+
 
 
 
 
 /*      Sending functions for mcu     */
-void SendFreqDataToMC_mcu(const float* amp, int length, const WAVEFORMATEX *wavform){
+void SendFreqDataToMCU(const float* amp, int length, const WAVEFORMATEX *wavform){
   if(_mcu_sendsg){
     int len =
       sizeof(uint16_t) +
       sizeof(int) +
       (sizeof(float) * length);
 
-    char *buffer = (char*)malloc(len);
+    char buffer[len];
 
-    ByteIteratorR _bir(buffer, len);
+    ByteIteratorR_Encryption _bir(buffer, len, &_mcu_cryptkey);
     _bir.setVar(SOUNDDATA_DATA);
     _bir.setVar(length);
-    _bir.setVar(reinterpret_cast<const char*>(amp), sizeof(float)*length);
+    _bir.setVarStr(reinterpret_cast<const char*>(amp), sizeof(float)*length);
 
-    mcuSock->SendData(buffer, len);
+    sendMcuData(buffer, len);
   }
 }
 
+void SendTimeDataToMCU(){
+  uint32_t _utime = (uint32_t)time(NULL);
+
+  printf("unixtime %d\n", _utime);
+
+  int _buflen =
+    sizeof(uint16_t) +
+    sizeof(uint32_t)
+  ;
+
+  char _buf[_buflen];
+  ByteIteratorR _bir(_buf, _buflen);
+  _bir.setVar(MCU_SETTIME);
+  _bir.setVar(_utime);
+
+  char *__buf = _buf;
+  onMsgGet_ForwardMC(&__buf, &_buflen);
+}
 
 
 
@@ -623,7 +846,7 @@ void onMsgGetMcu_GetConfigSG(char *data, int datalen){
     break; case CFG_SG_INPUTDEVICEDATA:{
       int16_t sidx; b_iter.getVar(sidx);
       sidx = sidx < 0 || sidx >= sg->GetDevices()->size()? sg->GetIndex(): sidx;
-      const string *devname = &sg->GetDevices()->operator[](sidx).deviceName;
+      const std::string *devname = &sg->GetDevices()->operator[](sidx).deviceName;
       auto wvf = sg->GetWaveFormat();
 
       int datalen =
@@ -635,17 +858,128 @@ void onMsgGetMcu_GetConfigSG(char *data, int datalen){
         sizeof(wvf->nChannels)
       ;
 
-      char *datastr = (char*)malloc(datalen);
+      char datastr[datalen];
       
-      ByteIteratorR _bir(datastr, datalen);
+      ByteIteratorR_Encryption _bir(datastr, datalen, &_mcu_cryptkey);
       _bir.setVar(GET_CONFIG_SG);
       _bir.setVar(CFG_SG_INPUTDEVICEDATA);
       _bir.setVar((uint16_t)sidx);
       _bir.setVar((int)devname->size());
-      _bir.setVar(devname->c_str(), devname->size());
+      _bir.setVarStr(devname->c_str(), devname->size());
       _bir.setVar(wvf->nChannels);
 
-      mcuSock->SendData(datastr, datalen);
+      sendMcuData(datastr, datalen);
+    }
+  }
+}
+
+void _onMCUHandshaked(){
+  printf("Handshaked\n");
+  _mcu_handshaked = true;
+  _mcu_connstate = MCUCONNSTATE_CONNECTED;
+  _sendMCUState();
+
+  // then send some data to MCU
+  SendTimeDataToMCU();
+}
+
+void _connectMessageToMcu(const char *random, int randomlen){
+  // then send an encrypted key to mcu
+  auto _pk = _mcu_cryptkey.getKey();
+
+  size_t _maxlen = _pk.second/4*3;
+  size_t _minlen = _pk.second/4;
+
+  uint32_t _rand; memcpy(&_rand, random, std::min((int)sizeof(uint32_t), randomlen));
+  size_t _len = sizeof(uint16_t) + std::max(_rand % _maxlen, _minlen);
+  char _enkey[_len];
+
+  ByteIteratorR _bir(_enkey, _len);
+  _bir.setVar(MCU_CONNECT);
+
+  memcpy(_enkey+_bir.tellidx(), _pk.first, _bir.available());
+
+  printf("decrypted hskey: %s", _enkey+_bir.tellidx());
+
+  _mcu_cryptkey.encryptOrDecryptData(_enkey+_bir.tellidx(), _bir.available(), _bir.available());
+
+  printf("encrypted hskey: %s\n", _enkey+_bir.tellidx());
+
+  mcuSock->SendData(_enkey, _len);
+
+  _onMCUHandshaked();
+}
+
+void onMsgGetMcu_McuPair(char *data, int datalen){
+  printf("pairing\n");
+  if(datalen > 0){
+    printf("using key data\n");
+    char *_key = (char*)malloc(datalen);
+    memcpy(_key, data, datalen);
+
+    if(_mcu_list_cryptkey.size() >= MCU_ENCRYPTIONKEY_LISTMAX)
+      _mcu_list_cryptkey.erase(_mcu_list_cryptkey.end());
+
+    printf("key from mcu: %s\n", _key);
+    _mcu_list_cryptkey.insert(_mcu_list_cryptkey.begin(), {_key, datalen});
+    _update_mcu_list_cryptkey();
+
+    _mcu_cryptkey.useKey(_key, datalen);
+    _connectMessageToMcu(_key, datalen);
+  }
+  else{
+    printf("asking key data\n");
+    size_t buflen = sizeof(uint16_t);
+    char buf[buflen];
+
+    ByteIteratorR _bir(buf, buflen);
+    _bir.setVar(MCU_PAIR);
+
+    // note: not using sendMcuData since we want to handshake
+    mcuSock->SendData(buf, buflen);
+  }
+}
+
+void onMsgGetMcu_McuConnect(char *data, int datalen){
+  // then add the key with the ones that stored in a file
+  // if match, then handshake
+
+  printf("Connecting\n");
+  if(datalen > 0){
+    int _foundidx = -1;
+    for(size_t i = 0; i < _mcu_list_cryptkey.size(); i++){
+      auto _pk = _mcu_list_cryptkey[i];
+      data_encryption _crypt;
+      _crypt.useKey(_pk.first, _pk.second, true);
+
+      printf("key to compare: %s\n", _pk.first);
+
+      if(_pk.second < datalen)
+        continue;
+
+      size_t o = 0;
+      for(; o < datalen; o++){
+        char _c = data[o];
+        _crypt.encryptOrDecryptData(&_c, 1, o+datalen);
+
+        printf("comparing: %X %X\n", (int)_c, (int)_pk.first[o]);
+
+        if(_c != _pk.first[o])
+          break;
+      }
+
+      if(o == datalen){
+        _foundidx = i;
+        break;
+      }
+    }
+
+    if(_foundidx >= 0){
+      printf("key found!\n");
+      auto _pk = _mcu_list_cryptkey[_foundidx];
+    
+      _mcu_cryptkey.useKey(_pk.first, _pk.second);
+      _connectMessageToMcu(data, datalen);
     }
   }
 }
@@ -662,38 +996,73 @@ void _callbackOnMcuDc(){
 }
 
 void _callbackOnMcumsg(const char* msg, int msglen){
+  printf("oncbmsg\n");
   if(msglen >= sizeof(uint16_t)){
-    ByteIterator b_iter(msg, msglen);
+    if(_mcu_handshaked){
+      printf("handshaked\n");
+      ByteIterator_Encryption b_iter(msg, msglen, &_mcu_cryptkey);
 
-    uint16_t msgcode = 0; b_iter.getVar(msgcode);
-    int buflen = msglen-sizeof(uint16_t);
-    char *buf = new char[buflen];
+      printf("key: %s\nmsgdata: %s\n", _mcu_cryptkey.getKey().first, msg);
 
-    b_iter.getVar(buf, buflen);
-    
-    switch(msgcode){
-      break; case SOUNDDATA_STOPSENDING:{
-        _mcu_sendsg = false;
-      }
+      uint16_t msgcode = 0; b_iter.getVar(msgcode);
+      printf("msgcode %X\n", msgcode);
+      int buflen = b_iter.available();
+      char buf[buflen];
 
-      break; case SOUNDDATA_STARTSENDING:{
-        _mcu_sendsg = true;
-      }
+      b_iter.getVarStr(buf, buflen);
 
-      break; case FORWARD:{
-        onMsgGetMcu_Forward(buf, buflen);
-      }
+      switch(msgcode){
+        break; case SOUNDDATA_STOPSENDING:{
+          _mcu_sendsg = false;
+        }
 
-      break; case SET_CONFIG_SG:{
-        onMsgGetMcu_SetConfigSG(buf, buflen);
-      }
+        break; case SOUNDDATA_STARTSENDING:{
+          _mcu_sendsg = true;
+        }
 
-      break; case GET_CONFIG_SG:{
-        onMsgGetMcu_GetConfigSG(buf, buflen);
+        break; case FORWARD:{
+          onMsgGetMcu_Forward(buf, buflen);
+        }
+
+        break; case SET_CONFIG_SG:{
+          onMsgGetMcu_SetConfigSG(buf, buflen);
+        }
+
+        break; case GET_CONFIG_SG:{
+          onMsgGetMcu_GetConfigSG(buf, buflen);
+        }
       }
     }
+    else{
+      printf("Not handshaked\n");
+      ByteIterator b_iter(msg, msglen);
 
-    delete[] buf;
+      uint16_t msgcode = 0; b_iter.getVar(msgcode);
+
+      printf("msgcode %d\n");
+      int buflen = b_iter.available();
+      char buf[buflen];
+
+      b_iter.getVarStr(buf, buflen);
+      
+      switch(msgcode){
+        break; case MCU_PAIR:{
+          onMsgGetMcu_McuPair(buf, buflen);
+        }
+
+        break; case MCU_CONNECT:{
+          onMsgGetMcu_McuConnect(buf, buflen);
+        }
+      }
+    }
+  }
+}
+
+void sendMcuData(const void *buf, size_t buflen){
+  if(_mcu_handshaked){
+    {LockSocket(mcuSock);
+      mcuSock->SendData(buf, buflen);
+    }
   }
 }
 
@@ -720,6 +1089,7 @@ void checkMcuMessage(){
     _mcu_connstate = MCUCONNSTATE_DISCONNECTED;
     _mcu_sendsg = false;
     _sendMCUState();
+    _mcu_handshaked = false;
     _mcu_previouslyConnected = false;
   }
 }
@@ -738,9 +1108,6 @@ void checkSocketMessage(Socket_MessageCallbacks *smc){
     char **paramContainer = (char**)malloc(0);
     while(smc->s_socket->IsAnotherMessage()){
       auto pairMsg = smc->s_socket->GetNextMessage();
-      for(int i = 0; i < pairMsg.second; i++)
-        printf("%x ", pairMsg.first[i]);
-      printf("\n");
       if(waitForHeader){
         if(pairMsg.second != 2){
           printf("Message code data length isn't correct (%d as supposed to be 2).\n", pairMsg.second);
@@ -793,6 +1160,58 @@ void checkSocketMessage(Socket_MessageCallbacks *smc){
   }
 }
 
+void _runVisualizer(){
+  // checking if the editor is running
+  for(int i = 0; i < 10 && progSock->IsConnected(); i++){
+    progSock->PingSocket();
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
+
+  if(!progSock->IsConnected()){
+    CloseHandle(_vissinfo.hStdInput);
+    CloseHandle(_vissinfo.hStdOutput);
+    CloseHandle(_vissinfo.hStdError);
+    CloseHandle(_vispinfo.hProcess);
+    CloseHandle(_vispinfo.hThread);
+
+    ZeroMemory(&_vissinfo, sizeof(_vissinfo));
+    _vissinfo.cb = sizeof(_vissinfo);
+
+    ZeroMemory(&_vispinfo, sizeof(_vispinfo));
+
+    char *_strpath = (char*)malloc(_vispathstr.size()+1);
+    strncpy(_strpath, _vispathstr.c_str(), _vispathstr.size());
+    _strpath[_vispathstr.size()] = '\0';
+
+    CreateProcessA(NULL, (LPSTR)_strpath, NULL, NULL, false, NORMAL_PRIORITY_CLASS, NULL, NULL, &_vissinfo, &_vispinfo);
+
+    free(_strpath);
+
+    // then wait until the program is connected
+    for(int i = 0; i < 10 && progSock->IsConnected(); i++){
+      progSock->PingSocket();
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+
+    if(!progSock->IsConnected())
+      printf("Editor can't be connected. The program specified might not be the editor.");
+  }
+  else
+    printf("User has already run visualizer!\n");
+
+  _rv_isrunning = false;
+}
+
+void runVisualizer(){
+  if(!_rv_isrunning){
+    _rv_isrunning = true;
+    if(_rv_thread.joinable())
+      _rv_thread.join();
+    
+    _rv_thread = std::thread(_runVisualizer);
+  }
+}
+
 LRESULT mainWindProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam){
   switch(msg){
     break; case WM_APP+1:{
@@ -802,8 +1221,34 @@ LRESULT mainWindProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam){
         break; case WM_RBUTTONDOWN:{
           HMENU hMenu = CreatePopupMenu();
           
-          AppendMenuW(hMenu, MF_STRING | MF_BYPOSITION, 0, L"Quit");
-          AppendMenuW(hMenu, MF_STRING | MF_BYPOSITION, 1, L"Test");
+          for(int i = 0; i < ce___enumlen; i++){
+            switch((PopupMenu_ChoiceEnum)i){
+              break; case ce_runeditor:
+                AppendMenuW(hMenu, MF_STRING | MF_BYPOSITION, (int)ce_runeditor | (WND_MAINCODEMENU << 8), L"Run Editor");
+              
+              break; case ce_changeDev:{
+                HMENU _hsubmenu = CreatePopupMenu();
+                
+                auto _devdata = sg->GetDevices();
+                for(int i = 0; i < _devdata->size(); i++){
+                  int _strsize = MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, _devdata->operator[](i).deviceName.c_str(), -1, NULL, 0);
+
+                  LPWSTR _wstr = (LPWSTR)malloc((_strsize)*sizeof(WCHAR));
+                  MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, _devdata->operator[](i).deviceName.c_str(), -1, _wstr, _strsize);
+
+                  AppendMenuW(_hsubmenu, MF_STRING | MF_BYPOSITION, i | (WND_DEVCODEMENU << 8), _wstr);
+                  free(_wstr);
+                }
+
+                AppendMenuW(hMenu, MF_STRING | MF_BYPOSITION | MF_POPUP, (UINT_PTR)_hsubmenu, L"Change Dev");
+
+                DestroyMenu(_hsubmenu);
+              }
+              
+              break; case ce_quit:
+                AppendMenuW(hMenu, MF_STRING | MF_BYPOSITION, (int)ce_quit | (WND_MAINCODEMENU << 8), L"Quit");
+            }
+          }
 
           POINT pt;
           GetCursorPos(&pt);
@@ -815,7 +1260,7 @@ LRESULT mainWindProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam){
 
         // run visualizer
         break; case WM_LBUTTONDBLCLK:{
-
+          runVisualizer();
         }
       }
     }
@@ -826,10 +1271,23 @@ LRESULT mainWindProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam){
       switch(type){
         // menu
         break; case 0:{
-          printf("id pressed %d\n", id);
-          switch(id){
-            break; case IDM_QUIT:{
-              QuitProgram();
+          uint8_t _code = id >> 8;
+          id &= 0x00ff;
+          switch(_code){
+            break; case WND_MAINCODEMENU:{
+              switch((PopupMenu_ChoiceEnum)id){
+                break; case ce_runeditor:{
+                  runVisualizer();
+                }
+
+                break; case ce_quit:{
+                  QuitProgram();
+                }
+              }
+            }
+
+            break; case WND_DEVCODEMENU:{
+              sg->SetDevice(id);
             }
           }
         }
@@ -844,8 +1302,9 @@ LRESULT mainWindProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam){
   }
 }
 
+
 int main(){
-  _onInitProg();
+  _onInitProg();  
 
   // setting up socket to vis tool
   progSock = new SocketHandler_Sync(port);
@@ -868,7 +1327,7 @@ int main(){
   // setting up the soundget class
   sg = new SoundGet();
   sg->CallbackListenerRaw = SendFreqDataToAnotherProg;
-  sg->CallbackListener = SendFreqDataToMC_mcu;
+  sg->CallbackListener = SendFreqDataToMCU;
   auto devices = sg->GetDevices();
   for(int i = 0; i < devices->size(); i++){
     printf("%s\n", devices->operator[](i).deviceName.c_str());
@@ -880,6 +1339,9 @@ int main(){
   sg->StartListening();
 
   _startthreadVis();
+
+  _mcu_ipaddr = 0xe322a8c0;
+  _startthreadMCU();
 
   MSG msg;
   while(GetMessage(&msg, mWnd, 0, 0)){

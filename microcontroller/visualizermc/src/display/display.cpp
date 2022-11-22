@@ -8,8 +8,8 @@
 #define DISP_LIST_TXTSIZE 2
 #define IMTEXT_TXTSIZE 1
 
-#define _boxsign_width 2/64
-#define _boxsign_height 16/128
+#define _boxsign_width 1/64
+#define _boxsign_height 1
 
 
 // this can be used for back forth
@@ -22,7 +22,7 @@ const size_t PROGMEM bezier_nudgeAnimationDatalen = sizeof(bezier_nudgeAnimation
 const float PROGMEM bezier_nudgeAnimationTime = 0.25f;
 
 const char *_dmpstr = "";
-void _dmpfunc1(listDisplay_Interact **datalist){}
+void _dmpfunc1(listDisplay_Interact**, void*){}
 const listDisplay_Interact::_interactData __dmpint{
   .onClicked = _dmpfunc1,
   .useFixedName = true,
@@ -311,15 +311,19 @@ void displayHandler::_onDisplayRefresh(){
       _obj->onDraw(_param);
 
 
-    // drawing box signs
-    if(_llListInteract->_current->listIndex != _mainpos){
+    // drawing box signs for border of the list
+    if(_llListInteract->_current->listIndex == 0){
       int16_t x1 = _displaysizex*_boxsign_width, y1 = _displaysizey*_boxsign_height;
       int16_t middle_y = (_displaysizey-y1)/2;
-      if(_llListInteract->_current->listIndex > 0)
-        _currbindDisp->fillRect(x1, middle_y, x1, y1, SSD1306_WHITE);
-      
-      if(_llListInteract->_current->listIndex < (_llListInteract->_current->listinteract.size()-1))
-        _currbindDisp->fillRect(_displaysizex-x1, middle_y, x1, y1, SSD1306_WHITE);
+
+      _currbindDisp->fillRect(0, middle_y, x1, y1, SSD1306_WHITE);
+    }
+    
+    if(_llListInteract->_current->listIndex == (_llListInteract->_current->listinteract.size()-1)){
+      int16_t x1 = _displaysizex*_boxsign_width, y1 = _displaysizey*_boxsign_height;
+      int16_t middle_y = (_displaysizey-y1)/2;
+
+      _currbindDisp->fillRect(_displaysizex-x1, middle_y, x1, y1, SSD1306_WHITE);
     }
     
     // checking important text
@@ -419,6 +423,11 @@ Adafruit_GFX *displayHandler::getdisplay(){
   return _currbindDisp;
 }
 
+void displayHandler::pass_input(sensor_actType act){
+  if(_txt1->inputPass)
+    _txt1->inputPass(act);
+}
+
 
 void displayHandler::act_left(){
   if(!_currentlyTransitioning){
@@ -461,9 +470,11 @@ void displayHandler::act_back(){
 void displayHandler::act_accept(){
   if(!_currentlyTransitioning){
     listDisplay_Interact *_nextlist = NULL;
-    auto *funcp = _llListInteract->_current->listinteract[_llListInteract->_current->listIndex].onClicked;
+
+    auto &_currentinteract = _llListInteract->_current->listinteract[_llListInteract->_current->listIndex];
+    auto *funcp = _currentinteract.onClicked;
     if(funcp != NULL)
-      funcp(&_nextlist);
+      funcp(&_nextlist, _currentinteract.additionalObj);
 
     _currentlyTransitioning = true;
     _refreshText = true;

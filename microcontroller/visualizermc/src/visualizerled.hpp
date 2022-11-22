@@ -31,6 +31,9 @@ class visualizer{
     void usePreset(int idx);
     void useLoadingPreset();
     void useErrorPreset();
+
+    void setLedMode(preset_colorMode colmode);
+    preset_colorMode getLedMode();
 };
 
 #endif

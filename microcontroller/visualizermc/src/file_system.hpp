@@ -59,7 +59,8 @@ class file_system{
       defrag,
       write,
       update_bounds,
-      update_allidtable
+      update_allidtable,
+      update_filecount
     };
 
 
@@ -98,6 +99,7 @@ class file_system{
 
     uint8_t _sizebytes;
     bool _notready = false;
+    bool _update_filecount = false;
 
 
     // variables for read/write task
@@ -173,6 +175,6 @@ class file_system{
     void complete_tasks();
 };
 
-extern file_system FS;
+extern file_system EEPROM_FS;
 
 #endif

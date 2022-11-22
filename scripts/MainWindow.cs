@@ -105,18 +105,40 @@ public class MainWindow: Control{
 
   private enum _mcu_forwardCodes{
     MCU_ASKALLPRESET = 0x01,
-    MCU_SETPRESET = 0x02,
-    MCU_GETPRESET = 0x03,
-    MCU_GETPRESETLEN = 0x04,
-    MCU_UPDATEPRESETS = 0x05,
-    MCU_USEPRESET = 0x06,
-    MCU_GETMCUINFO = 0x10
+    MCU_UPDATEPRESETS = 0x02,
+    MCU_USEPRESET = 0x03,
+
+    MCU_SETPRESET = 0x100,
+    MCU_SETPASSWORD = 0x101,
+    MCU_SETREMOVEPASSWORD = 0x102,
+    MCU_SETTIME = 0x103,
+
+    MCU_GETPRESET = 0x200,
+    MCU_GETPRESETLEN = 0x201,
+    MCU_GETPASSWORDMAX = 0x202,
+    MCU_GETPASSWORD = 0x203,
+    MCU_GETTIME = 0x204,
+    
+    MCU_GETMCUINFO = 0x280,
+    MCU_GETMCUINFO_BATTERYLVL = 0x281
   }
 
   private enum _sgconnerrorbutton_codes{
     RUNSG,
     SANDBOX,
     QUIT
+  }
+
+  private enum _vdropdownpanel_codes{
+    PASSWORD
+  }
+
+  private enum __pass_editcodes{
+    SSID = 0,
+    PASSWORD = 1,
+    _DMP = 2,
+    _LEN = 3,
+    APPLY = -1
   }
 
 
@@ -180,7 +202,7 @@ public class MainWindow: Control{
   private Splitter _splitter;
   private Visualizer _vis;
   private ShaderMaterial _vismat;
-  private PopupEdit _pedit;
+  private PopupEdit _pedit, _popupPassEdit;
   private PopupEdit_IPPort _pedit_IPPopup;
   private VisualizerDropdown _dropdown;
 
@@ -207,6 +229,10 @@ public class MainWindow: Control{
   private ushort _set_manyPreset = 0;
   private bool _set_preset = true;
 
+  private List<KeyValuePair<string, string>> 
+    _mcu_passwordDatas = new List<KeyValuePair<string, string>>(),
+    _mcu_passwordDatasEdit = new List<KeyValuePair<string, string>>();
+
   private bool _is_sandboxmode = false;
   private bool _is_sgconnected = false;
 
@@ -226,6 +252,186 @@ public class MainWindow: Control{
   private SocketListener _sockListener;
 
 
+
+  private void _sendPasswordsDataMCU(){
+    byte[] _data = new byte[(sizeof(ushort) * (_mcu_passwordDatas.Count * 2 + 1))];
+    int _dataiter = 0;
+    Array.Copy(BitConverter.GetBytes((ushort)_mcu_passwordDatas.Count), _data, sizeof(ushort)); _dataiter += sizeof(ushort);
+
+    for(int i = 0; i < _mcu_passwordDatas.Count; i++){
+      var _pair = _mcu_passwordDatas[i];
+      Array.Resize<byte>(ref _data, _data.Length + _pair.Key.Length + _pair.Key.Length);
+
+      Array.Copy(BitConverter.GetBytes((ushort)_pair.Key.Length), 0, _data, _dataiter, sizeof(ushort));
+      _dataiter += sizeof(ushort);
+      Array.Copy(_pair.Key.ToCharArray(), 0, _data, _dataiter, _pair.Key.Length);
+      _dataiter += _pair.Key.Length;
+
+      Array.Copy(BitConverter.GetBytes((ushort)_pair.Value.Length), 0, _data, _dataiter, sizeof(ushort));
+      _dataiter += sizeof(ushort);
+      Array.Copy(_pair.Value.ToCharArray(), 0, _data, _dataiter, _pair.Value.Length);
+      _dataiter += _pair.Value.Length;
+    }
+
+    _sendMsg_forward(_mcu_forwardCodes.MCU_SETPASSWORD, _data);
+  }
+
+  private void _popuppassedit_onoptchanged(int __dmp, int id, object obj, PopupEdit popup){
+    int _idx = id / (int)__pass_editcodes._LEN;
+    switch((__pass_editcodes)(id % (int)__pass_editcodes._LEN)){
+      case __pass_editcodes.SSID:{
+        EditText.get_data data = obj as EditText.get_data;
+        var _pair = _mcu_passwordDatasEdit[_idx];
+
+        if(data.confirmed && data.strdata.Length == 0)
+          data.strdata = _mcu_passwordDatas[_idx].Key;
+
+        _mcu_passwordDatasEdit[_idx] = new KeyValuePair<string, string>(data.strdata, _pair.Value);
+      }break;
+
+      case __pass_editcodes.PASSWORD:{
+        EditText.get_data data = obj as EditText.get_data;
+        var _pair = _mcu_passwordDatasEdit[_idx];
+
+        string _pass = _pair.Value;
+        string _passhide = "";
+
+        // erase
+        if(data.strdata.Length < _pass.Length){
+          _pass = _pass.Substr(0, data.strdata.Length);
+        }
+
+        // adding
+        else if(data.strdata.Length > _pass.Length){
+          _pass = _pass + data.strdata[data.strdata.Length-1];
+        }
+
+        for(int i = 0; i < _pass.Length; i++)
+          _passhide += '*';
+        
+        _mcu_passwordDatasEdit[_idx] = new KeyValuePair<string, string>(_pair.Key, _pass);
+        
+        data.strdata = _passhide;
+      }break;
+
+      case __pass_editcodes.APPLY:{
+        EditApplyCancel.get_param _cont = obj as EditApplyCancel.get_param;
+        if(_cont.answer == EditApplyCancel.Answer.APPLY){
+          bool _sendtomcu = true;
+          const string _errformat = "Password #{0} has the same as Password #{1}.\nPassword #{2} will be reset.\n\n";
+          string _errormsg = "";
+          for(int i = 0; i < _mcu_passwordDatasEdit.Count; i++){
+            var _pair = _mcu_passwordDatasEdit[i];
+            if(_pair.Key == "")
+              continue;
+
+            for(int o = i+1; o < _mcu_passwordDatasEdit.Count; o++){
+              var _pair2 = _mcu_passwordDatasEdit[o];
+              if(_pair2.Key == "")
+                continue;
+              
+              if(_pair.Key == _pair2.Key){
+                _mcu_passwordDatasEdit[o] = new KeyValuePair<string, string>("", _pair2.Value);
+                _errormsg += string.Format(_errformat, i, o, i);
+                _sendtomcu = false;
+              }
+            }
+
+            _mcu_passwordDatas[i] = _pair;
+          }
+
+          if(_sendtomcu)
+            _sendPasswordsDataMCU();
+          else{
+            _errormsg += "Passwords will not be send to MCU.";
+            ErrorShowAutoload.Autoload.DisplayError(_errormsg);
+          }
+        }
+
+        popup.Exit();
+      }break;
+    }
+  }
+
+  private void _on_editPanelChanged(int id, object obj){
+    switch((_vdropdownpanel_codes)id){
+      case _vdropdownpanel_codes.PASSWORD:{
+        IEditInterface_Create.EditInterfaceContent[] _passEdit = {
+          new IEditInterface_Create.EditInterfaceContent{
+            TitleName = "SSID {0}",
+            EditType = IEditInterface_Create.InterfaceType.Text,
+            ID = (int)__pass_editcodes.SSID
+          },
+
+          new IEditInterface_Create.EditInterfaceContent{
+            TitleName = "Password",
+            EditType = IEditInterface_Create.InterfaceType.Text,
+            ID = (int)__pass_editcodes.PASSWORD
+          },
+
+          new IEditInterface_Create.EditInterfaceContent{
+            TitleName = "",
+            EditType = IEditInterface_Create.InterfaceType.StaticText,
+            Properties = new EditStaticText.set_param{},
+            ID = (int)__pass_editcodes._DMP
+          }
+        };
+
+        IEditInterface_Create.EditInterfaceContent[] _edit
+          = new IEditInterface_Create.EditInterfaceContent[(_mcu_passwordDatas.Count * _passEdit.Length)+1];
+
+        for(int i = 0; i < _edit.Length-1; i++){
+          int _passidx = i / _passEdit.Length;
+          int _idx = i % _passEdit.Length;
+          var _editcont = _passEdit[_idx];
+          _editcont.ID = i;
+
+          switch((__pass_editcodes)_idx){
+            case __pass_editcodes.SSID:{
+              GD.Print(_passidx, _mcu_passwordDatas[_passidx]);
+              _editcont.TitleName = string.Format(_editcont.TitleName, _passidx+1);
+              var _p = new EditText.set_param{strdata = _mcu_passwordDatas[_passidx].Key};
+
+              _editcont.Properties = _p;
+            }break;
+
+            case __pass_editcodes.PASSWORD:{
+              var _p = new EditText.set_param();
+
+              _p.strdata = "";
+              string _pass = _mcu_passwordDatas[_passidx].Value;
+              for(int o = 0; o < _pass.Length; o++)
+                _p.strdata += '*';
+
+              _editcont.Properties = _p;
+            }break;
+          }
+
+          _edit[i] = _editcont;
+        }
+
+        _edit[_edit.Length-1] = new IEditInterface_Create.EditInterfaceContent{
+          TitleName = "",
+          EditType = IEditInterface_Create.InterfaceType.ApplyCancel,
+          Properties = new EditApplyCancel.set_param{
+            alignment = HBoxContainer.AlignMode.End
+          },
+
+          ID = (int)__pass_editcodes.APPLY
+        };
+
+
+        _mcu_passwordDatasEdit.Clear();
+        for(int i = 0; i < _mcu_passwordDatas.Count; i++)
+          _mcu_passwordDatasEdit.Add(_mcu_passwordDatas[i]);
+
+        _popupPassEdit.RectPosition = GetGlobalMousePosition();
+        _popupPassEdit.SetInterfaceEdit(_edit);
+        _popupPassEdit.Popup_();
+
+      }break;
+    }
+  }
 
   private void _SGButtonPressed(){
     if(_is_sgconnected)
@@ -739,9 +945,10 @@ public class MainWindow: Control{
       case _editContent.PresetName:{
         EditText.get_data data = obj as EditText.get_data;
         if(data.strdata.Length > MaxPresetNameLength){
-          ErrorShowAutoload.Autoload.DisplayError(string.Format("Preset name cannot be have more than {0} characters.", MaxPresetNameLength));
+          ErrorShowAutoload.Autoload.DisplayError(string.Format("Preset name cannot have more than {0} characters.", MaxPresetNameLength));
           data.strdata = data.strdata.Substr(0, MaxPresetNameLength);
         }
+
         _current_preset.PresetName = data.strdata;
         (_presetChoice as EditChoice).ChangeTextItem(_presetIdx, data.strdata);
         break;
@@ -749,7 +956,9 @@ public class MainWindow: Control{
 
       case _editContent.ManyLEDs:{
         EditText.get_data data = obj as EditText.get_data;
-        _manyLed = data.strdata.ToInt();
+        int.TryParse(data.strdata, out _manyLed);
+        data.strdata = _manyLed.ToString();
+
         _vis.Bands = _manyLed;
         _vismat.SetShaderParam("manyLed", _manyLed);
         _splitter.Ticks = _manyLed;
@@ -784,7 +993,7 @@ public class MainWindow: Control{
 
       case _editContent.SpeedChange:{
         EditText.get_data data = obj as EditText.get_data;
-        float speed = data.strdata.ToFloat();
+        float speed; float.TryParse(data.strdata, out speed);
         _current_preset.RGBData.rgb_speed = speed;
         _vis.OffsetMultiplier = speed;
         data.strdata = speed.ToString();
@@ -1459,6 +1668,37 @@ public class MainWindow: Control{
     }
   }
 
+  private void _setupDropdown(){
+    // just in case if it were hidden when editing
+    _dropdown.Visible = true;
+    _dropdown.Connect("on_connectbuttonpressed", this, "_doConnectMCU");
+    _dropdown.Connect("on_setmcuaddrbuttonpressed", this, "_onSetMCUAddressBtn");
+    _dropdown.Connect("on_changeindevice", this, "_onChangeDev");
+    _dropdown.Connect("on_sgbuttonpressed", this, "_SGButtonPressed");
+    _dropdown.Connect("on_sandboxbuttonpressed", this, "_sandboxButtonPressed");
+    _dropdown.Connect("on_editpanelchanged", this, "_on_editPanelChanged");
+    _dropdown.SetSGConnectedState(false);
+    _dropdown.SetSandboxState(false);
+
+    IEditInterface_Create.EditInterfaceContent[] _editCont = {
+      new IEditInterface_Create.EditInterfaceContent{
+        TitleName = "",
+        EditType = IEditInterface_Create.InterfaceType.StaticText,
+        Properties = new EditStaticText.set_param{},
+        ID = -1
+      },
+
+      new IEditInterface_Create.EditInterfaceContent{
+        TitleName = "Set WiFi Password(s)",
+        EditType = IEditInterface_Create.InterfaceType.Button,
+        Properties = new EditButton.set_param{},
+        ID = (int)_vdropdownpanel_codes.PASSWORD
+      }
+    };
+
+    _dropdown.SetPanelEdit(_editCont);
+  }
+
 
   public override void _Ready(){
     ErrorShowAutoload.Autoload.AddToControl(this);
@@ -1499,15 +1739,7 @@ public class MainWindow: Control{
     _vis = GetNode<Visualizer>("1/2/1");
     _dropdown = GetNode<VisualizerDropdown>("2");
 
-    // just in case if it were hidden when editing
-    _dropdown.Visible = true;
-    _dropdown.Connect("on_connectbuttonpressed", this, "_doConnectMCU");
-    _dropdown.Connect("on_setmcuaddrbuttonpressed", this, "_onSetMCUAddressBtn");
-    _dropdown.Connect("on_changeindevice", this, "_onChangeDev");
-    _dropdown.Connect("on_sgbuttonpressed", this, "_SGButtonPressed");
-    _dropdown.Connect("on_sandboxbuttonpressed", this, "_sandboxButtonPressed");
-    _dropdown.SetSGConnectedState(false);
-    _dropdown.SetSandboxState(false);
+    _setupDropdown();
 
     _splitter.MaxButtons = MaxSplits;
     _vismat = _vis.Material as ShaderMaterial;
@@ -1552,6 +1784,10 @@ public class MainWindow: Control{
     _pedit.Connect("on_optionchanged", this, "_popupedit_onoptchanged");
     AddChild(_pedit);
 
+    _popupPassEdit = _popupEdit.Instance<PopupEdit>();
+    _popupPassEdit.Connect("on_optionchanged", this, "_popuppassedit_onoptchanged");
+    AddChild(_popupPassEdit);
+
     _pedit_IPPopup = _popupEdit_IPPort.Instance<PopupEdit_IPPort>();
     _pedit_IPPopup.Connect("on_optionchanged_ipport", this, "_setMCUAddress");
     _pedit_IPPopup.Port = _def_mcuport;
@@ -1565,5 +1801,8 @@ public class MainWindow: Control{
     _sgtimer.Autostart = false;
     _sgtimer.OneShot = true;
     _sgtimer.Start(_waitForSGConn);
+
+    _mcu_passwordDatas.Add(new KeyValuePair<string, string>("test1", "1234"));
+    _mcu_passwordDatas.Add(new KeyValuePair<string, string>("test2", "4534483756"));
   }
 }

@@ -3,5 +3,3 @@
 [node name="AcceptDialog" type="AcceptDialog"]
 margin_right = 250.0
 margin_bottom = 75.0
-resizable = true
-dialog_autowrap = true

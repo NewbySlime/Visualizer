@@ -3,9 +3,10 @@
 
 #include "Arduino.h"
 #include "utility"
+#include "data_encryption.hpp"
 
 class ByteIterator{
-  private:
+  protected:
     size_t _datalength;
     size_t _dataidx;
     const char *_data;
@@ -26,8 +27,7 @@ class ByteIterator{
       if((_dataidx+sizeof(_type)) > _datalength)
         return false;
 
-      memcpy(&variable, _data+_dataidx, sizeof(_type));
-      _dataidx += sizeof(_type);
+      getVarStr(reinterpret_cast<char*>(&variable), sizeof(_type));
       return true;
     }
 
@@ -65,13 +65,13 @@ class ByteIterator{
       return true;
     }
 
-    size_t getVar(void *buffer, size_t bufferlen){
-      return getVar(reinterpret_cast<char*>(buffer), bufferlen);
+    size_t getVarStr(void *buffer, size_t bufferlen){
+      return getVarStr(reinterpret_cast<char*>(buffer), bufferlen);
     }
 
     // return how many times it reads
-    size_t getVar(char *buf, size_t buflen){
-      size_t readlen = min(buflen, _datalength-_dataidx);
+    virtual size_t getVarStr(char *buf, size_t buflen){
+      size_t readlen = std::min(buflen, _datalength-_dataidx);
       memcpy(buf, _data+_dataidx, readlen);
 
       _dataidx += readlen;
@@ -84,7 +84,7 @@ class ByteIterator{
 };
 
 class ByteIteratorR{
-  private:
+  protected:
     size_t _datalength;
     size_t _dataidx;
     char *_data;
@@ -110,8 +110,7 @@ class ByteIteratorR{
       if((_dataidx+sizeof(_type)) > _datalength)
         return false;
 
-      memcpy(_data+_dataidx, &variable, sizeof(_type));
-      _dataidx += sizeof(_type);
+      setVarStr(reinterpret_cast<const char*>(&variable), sizeof(_type));
       return true;
     }
 
@@ -144,13 +143,13 @@ class ByteIteratorR{
       return true;
     }
 
-    size_t setVar(void *data, size_t datalength){
-      return setVar(reinterpret_cast<const char*>(data), datalength);
+    size_t setVarStr(const void *data, size_t datalength){
+      return setVarStr(reinterpret_cast<const char*>(data), datalength);
     }
 
     // return how many times it writes
-    size_t setVar(const char *data, size_t datalength){
-      size_t writelen = min(datalength, _datalength-_dataidx);
+    virtual size_t setVarStr(const char *data, size_t datalength){
+      size_t writelen = std::min(datalength, _datalength-_dataidx);
       memcpy(_data+_dataidx, data, writelen);
 
       _dataidx += writelen;
@@ -161,5 +160,41 @@ class ByteIteratorR{
       return _datalength-_dataidx;
     }
 };
+
+
+class ByteIterator_Encryption: public ByteIterator{
+  private:
+    data_encryption *_key;
+
+  public:
+    ByteIterator_Encryption(const char *data, size_t datalen, data_encryption *_encryption): ByteIterator(data, datalen){
+      _key = _encryption;
+    }
+
+    size_t getVarStr(char *data, size_t datalen){
+      size_t _len = ByteIterator::getVarStr(data, datalen);
+      _key->encryptOrDecryptData(data, _len, _dataidx-_len);
+      return _len;
+    }
+};
+
+class ByteIteratorR_Encryption: public ByteIteratorR{
+  private:
+    data_encryption *_key;
+  
+  public:
+    ByteIteratorR_Encryption(char *data, size_t datalen, data_encryption *_encryption): ByteIteratorR(data, datalen){
+      _key = _encryption;
+    }
+
+    size_t setVarStr(const char *data, size_t datalen){
+      char *_dataaddr = _data+_dataidx;
+
+      size_t _len = ByteIteratorR::setVarStr(data, datalen);
+      _key->encryptOrDecryptData(_dataaddr, _len, _dataidx-_len);
+      return _len;
+    }
+};
+
 
 #endif

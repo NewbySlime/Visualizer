@@ -21,4 +21,26 @@ class drawable{
     virtual void onVisible(bool visible){}
 };
 
+class Idraw{
+  public:
+    virtual void update(drawable_cbparam &param);
+
+};
+
+class Idraw_interval: Idraw{
+  private:
+    int16_t time_start;
+    int16_t time_ms;
+    bool _interval;
+
+  protected:
+    bool _is_interval();
+    int16_t _currenttime();
+  
+  public:
+    void update(drawable_cbparam &param);
+
+    void setInterval(int16_t ms);
+};
+
 #endif

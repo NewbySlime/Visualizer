@@ -3,14 +3,7 @@
 
 #include "Arduino.h"
 
-enum sensor_actType{
-  pressed,
-  released,
-  click,
-  double_click,
-  slide_left,
-  slide_right
-};
+#include "input_sensor.hpp"
 
 typedef void (*CallbackOnSensorAct)(sensor_actType);
 

@@ -146,7 +146,6 @@ rect_min_size = Vector2( 380, 0 )
 custom_constants/separation = 10
 
 [node name="6" type="HBoxContainer" parent="1/1/1/1/1"]
-visible = false
 margin_top = 547.0
 margin_right = 405.0
 margin_bottom = 567.0
@@ -211,3 +210,7 @@ margin_bottom = 59.0
 rect_min_size = Vector2( 100, 20 )
 
 [node name="2" parent="." instance=ExtResource( 10 )]
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_right = 0.0
+margin_bottom = 0.0

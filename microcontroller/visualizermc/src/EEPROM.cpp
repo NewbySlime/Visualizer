@@ -11,18 +11,19 @@
 
 #include "async.hpp"
 
-#define BUF_MAX 16
+#define BUF_MAXREAD 16
 
 
 /*      EEPROM_Class functions      */
 size_t EEPROM_Class::_bufWrite(uint32_t address, char *buf, size_t buflen){
-  DEBUG_PRINT("address %d, _size %d\n", address, _size);
+  DEBUG_PRINT("address %X, _size %d\n", address, _size);
   if(address >= _size){
     _memlimit = true;
     return 0;
   }
 
-  size_t bytesend = min(buflen, (size_t)BUF_MAX-_addresssize);
+  // the last one is to offset not to exceed page boundary
+  size_t bytesend = min(buflen, (size_t)(_pagesize-(address%_pagesize)));
   if((bytesend+address) >= _size){
     _memlimit = true;
     bytesend = _size-address;
@@ -50,14 +51,21 @@ size_t EEPROM_Class::_bufRead(char *buf, size_t buflen){
     return 0;
   }
 
-  size_t byteread = min(buflen, (size_t)BUF_MAX);
+  size_t byteread = min(buflen, (size_t)BUF_MAXREAD);
   if((byteread+_curmemaddr) >= _size){
     _memlimit = true;
     byteread = _size-_curmemaddr;
   }
 
-  Wire.requestFrom(_addr, byteread);
+  size_t reqlen = Wire.requestFrom(_addr, byteread);
   byteread = Wire.readBytes(buf, byteread);
+
+  DEBUG_PRINT("reqlen %d\nbyteread %d\n", reqlen, byteread);
+  for(int i = 0; i < byteread; i++){
+    DEBUG_PRINT("0x%X ", buf[i]);
+  }
+
+  DEBUG_PRINT("\n");
 
   _curmemaddr += byteread;
   return byteread;
@@ -86,23 +94,24 @@ void EEPROM_Class::_timer_bufWrite(){
   if(_t_bytesent < _t_buflen && !_memlimit){
     _t_bytesent += _bufWrite(_t_address+_t_bytesent, _t_buf+_t_bytesent, _t_buflen-_t_bytesent);
     int _t = timer_setTimeout(_delayms, __onTimer, this);
-    DEBUG_PRINT("_t %d\n", _t);
   }
   else{
     _ready_use = true;
-    DEBUG_PRINT("calling\n");
+
     if(_cb)
       _cb(_classobj);
-    DEBUG_PRINT("done calling\n");
   }
 }
 
 void EEPROM_Class::_polling_bufRead(){
-  if(_p_byteread < _p_buflen && !_memlimit)
+  if(_p_byteread < _p_buflen && !_memlimit){
+    DEBUG_PRINT("byteread %d\nbuf 0x%X, 0x%X\n", _p_byteread, _p_buf, _p_buf+_p_byteread);
     _p_byteread += _bufRead(_p_buf+_p_byteread, _p_buflen-_p_byteread);
+  }
   else{
     polling_removefunc(this);
     _ready_use = true;
+    
     if(_cb)
       _cb(_classobj);
   }

@@ -84,7 +84,6 @@ void timer_deleteTimer(unsigned int timer_id){
 // only run it on loop() or any function that's not in interrupt context
 void timer_update(){
   if(_flags > 0){
-    //Serial.printf("flags: 0x%X\n", _flags);
     for(char i = 0; i < MAX_NUMBER_TIMERS; i++){
       if((_deleteFlags & (1 << i)) > 0){
         idcont[i] = -1;

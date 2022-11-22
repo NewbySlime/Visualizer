@@ -15,7 +15,7 @@
 
 #define SOCKET_TIMEOUTMS 5000  // 5 s
 
-#define SOCKET_RECONNECTTRIES 10
+#define SOCKET_RECONNECTTRIES 100
 
 
 const int MAXTIMESRESPUDP = 32;
@@ -65,14 +65,14 @@ void initSocket(){
     throw;
   }
 }
-_ProgInitFunc _pifs(initSocket);
+PROGINITFUNC(initSocket);
 
 void closeSocket(){
   printf("closing socket");
   delete wsadat;
   WSACleanup();
 }
-_ProgQuitFunc _pqfs(closeSocket);
+PROGQUITFUNC(closeSocket);
 
 
 
@@ -223,8 +223,8 @@ void SocketHandler_Sync::ReconnectSocket(){
   for(int i = 0; i < SOCKET_RECONNECTTRIES; i++){
     lastErrcode = send(currSock, reinterpret_cast<const char*>(&PINGMESSAGE), sizeof(unsigned short), 0);
     if(_checkrecv()){
-      _responded = true;
       stopSending = false;
+      break;
     }
   }
 }
@@ -253,7 +253,7 @@ void SocketHandler_Sync::SendData(const void *data, int datalength){
   ByteIteratorR _bir{buf, buflen};
   _bir.setVar(SENDMESSAGE);
   _bir.setVar(datalength);
-  _bir.setVar(data, datalength);
+  _bir.setVarStr(data, datalength);
 
   lastErrcode = send(currSock, buf, buflen, 0);
 }

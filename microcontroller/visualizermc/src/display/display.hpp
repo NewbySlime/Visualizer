@@ -9,6 +9,8 @@
 
 #include "images/drawable.hpp"
 
+#include "input_sensor.hpp"
+
 
 #define DISPLAY_REFRESHRATE 18
 #define _classcallback(type, classtype, namefunc) static type _##namefunc(void *obj){((classtype*)obj)->namefunc();}\
@@ -17,10 +19,15 @@ type namefunc();
 
 struct listDisplay_Interact{
   struct _interactData{
-    void (*onClicked)(listDisplay_Interact **datalist);
+    void (*onClicked)(listDisplay_Interact **datalist, void *obj);
+    void *additionalObj;
 
     bool useFixedName = true;
     const char *name;
+
+    // will be used when the display is passing input
+    // but can be as NULL
+    void (*inputPass)(sensor_actType act);
 
     // will be used if useFixedName is false
     drawable *objdraw;
@@ -28,6 +35,9 @@ struct listDisplay_Interact{
 
   std::vector<_interactData> listinteract;
   size_t listIndex;
+
+  // if this is on, then the list will loop itself
+  bool listLoop = false;
 
   // since all double click will redirect to previous list, this will not be used
   // the handler will use linked list instead
@@ -124,6 +134,9 @@ class displayHandler{
     void back_tomainlist();
     void importanttext(const char *txt);
     Adafruit_GFX *getdisplay();
+
+    // this will pass the input to current listDisplay_Interact
+    void pass_input(sensor_actType act);
 
     _classcallback(void, displayHandler, act_left);
     _classcallback(void, displayHandler, act_right);

@@ -12,6 +12,8 @@ public class VisualizerDropdown: Dropdown{
   private delegate void on_sgbuttonpressed();
   [Signal]
   private delegate void on_sandboxbuttonpressed();
+  [Signal]
+  private delegate void on_editpanelchanged(int idx);
 
   [Export]
   private Color DisconnectedTextColor, ConnectedTextColor, ReconnectTextColor;
@@ -37,7 +39,7 @@ public class VisualizerDropdown: Dropdown{
 
 
   private HBoxContainer _taskbar;
-  private VBoxContainer _dropdownPanel;
+  private VBoxContainer _editPanel;
 
   private TextureProgress _batteryProgress;
   private Label _batteryLabel, _infoLabel, _soundLabel;
@@ -73,6 +75,10 @@ public class VisualizerDropdown: Dropdown{
     EmitSignal("on_changeindevice", (obj as EditChoice.get_data).choiceID);
   }
 
+  private void _onEditPanelChanged(int idx, object obj){
+    EmitSignal("on_editpanelchanged", idx, obj);
+  }
+
   public override void _Ready(){
     _taskbar = GetNode<HBoxContainer>("VBoxContainer/2/1");
     _taskbar.RectPosition = new Vector2(_taskbar.RectPosition.x, -_taskbar.RectSize.y);
@@ -102,7 +108,9 @@ public class VisualizerDropdown: Dropdown{
     (_soundDevChoice as EditChoice).Connect("on_edited", this, "_onDeviceChanged");
 
     HBoxContainer _sgstate = GetNode<HBoxContainer>("VBoxContainer/2/2/1/1");
-    HBoxContainer _sandboxstate = panelNode.GetNode<HBoxContainer>("1/1/1/3/1/1");
+    HBoxContainer _sandboxstate = panelNode.GetNode<HBoxContainer>("1/1/1/3");
+
+    _editPanel = panelNode.GetNode<VBoxContainer>("1/1/1/4/1");
 
     _buttonSGStart = _sgstate.GetNode<Button>("2");
     _sgstateLabel = _sgstate.GetNode<RichTextLabel>("1");
@@ -243,5 +251,10 @@ public class VisualizerDropdown: Dropdown{
 
   public void SetCurrentSoundDevData(string name, int channel){
     _soundLabel.Text = string.Format(_soundLabel_template, name, channel);
+  }
+
+  public void SetPanelEdit(IEditInterface_Create.EditInterfaceContent[] edit){
+    IEditInterface_Create.Autoload.RemoveAllChild(_editPanel);
+    IEditInterface_Create.Autoload.CreateAndAdd(_editPanel, this, "_onEditPanelChanged", edit);
   }
 }

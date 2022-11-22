@@ -19,22 +19,7 @@ if(err & 0xff00)\
 
 
 preset *_new_def_preset(){
-  // rainbow representation in hex
-  color cols[] = {0xff0000, 0xffe900, 0x20ff00, 0x00fff3, 0x0800ff, 0xff00fb};
-  float ranges[] = {0.05f, 0.16f, 0.32f, 0.48f, 0.64f, 0.80f};
-  colorRanges colrange{cols, ranges, 6};
-  
-  
-  std::vector<part> splits; splits.push_back(part{
-    .start_led = 0,
-    .end_led = PRESET_CONST_LEDNUM,
-    .range_start = 0.0f,
-    .range_end = 1.0f,
-    .reversed = false,
-    .channel = 0
-  });
-
-  return new preset{
+  preset *_p = new preset{
     .presetName = "Default",
     .colorMode = preset_colorMode::RGB_p,
     .brightness = 1.0f,
@@ -46,9 +31,23 @@ preset *_new_def_preset(){
     .brightnessMode = preset_brightnessMode::Individual,
     .maxIntensity = 20.0f,
     .minIntensity = 0.0f,
-    .colorRange = colrange,
-    .splitParts = splits
   };
+  
+  _p->splitParts.push_back(part{
+    .start_led = 0,
+    .end_led = CONST_LEDNUM,
+    .range_start = 0.0f,
+    .range_end = 1.0f,
+    .reversed = false,
+    .channel = 0
+  });
+
+  // rainbow representation in hex
+  color cols[] = {0xff0000, 0xffe900, 0x20ff00, 0x00fff3, 0x0800ff, 0xff00fb};
+  float ranges[] = {0.05f, 0.16f, 0.32f, 0.48f, 0.64f, 0.80f};
+  _p->colorRange = colorRanges{cols, ranges, 6};
+  
+  return _p;
 }
 
 
@@ -66,18 +65,19 @@ void presetData::_updateFileCode(){
   for(size_t i = 0; i < _presetLen; i++)
     _datap[i] = _fpreset_codes[i];
   
-  FS.write_file(_PRESET_FILECODE, _datap, _presetLen);
+  EEPROM_FS.write_file(_PRESET_FILECODE, _datap, _presetLen);
 }
 
 void presetData::_loadData(){
-  if(FS.file_exist(_PRESET_FILECODE) && false){
-    FS.read_file(_PRESET_LASTFILECODE, reinterpret_cast<char*>(&_lastPreset), NULL, NULL);
-    FS.complete_tasks();
+  // TODO don't forget to set this
+  if(EEPROM_FS.file_exist(_PRESET_FILECODE) && false){
+    EEPROM_FS.read_file(_PRESET_LASTFILECODE, reinterpret_cast<char*>(&_lastPreset), NULL, NULL);
+    EEPROM_FS.complete_tasks();
 
-    _presetLen = FS.file_size(_PRESET_FILECODE);
+    _presetLen = EEPROM_FS.file_size(_PRESET_FILECODE);
     char *_datapc = (char*)malloc(_presetLen);
-    FS.read_file(_PRESET_FILECODE, _datapc, NULL, NULL);
-    FS.complete_tasks();
+    EEPROM_FS.read_file(_PRESET_FILECODE, _datapc, NULL, NULL);
+    EEPROM_FS.complete_tasks();
 
     _fpreset_codes.resize(_presetLen);
     for(size_t i = 0; i < _presetLen; i++)
@@ -97,15 +97,23 @@ void presetData::_loadData(){
     size_t _datalen = presetSizeInBytes(*_currentP);
     char *_data = (char*)malloc(_datalen);
     copyToMemory(_data, _datalen, *_currentP);
+    
+    Serial.printf("_data %d\n", _datalen);
+    for(int i = 0; i < _datalen; i++){
+      if((i % 16) == 0)
+        Serial.printf("\nidx %d 0x%X\n\t", i, i);
+      
+      Serial.printf("0x%X ", _data[i]);
+    }
 
-    FS.write_file(_PRESET_FILECODE | 1, _data, _datalen);
+    EEPROM_FS.write_file(_PRESET_FILECODE | 1, _data, _datalen);
 
     uint8_t *_lastp = (uint8_t*)malloc(sizeof(uint8_t));
     *_lastp = _lastPreset;
 
-    FS.write_file(_PRESET_LASTFILECODE, reinterpret_cast<char*>(_lastp), sizeof(uint8_t));
+    EEPROM_FS.write_file(_PRESET_LASTFILECODE, reinterpret_cast<char*>(_lastp), sizeof(uint8_t));
     
-    FS.complete_tasks();
+    EEPROM_FS.complete_tasks();
 
     delete _currentP;
   }
@@ -120,7 +128,7 @@ preset_error presetData::_setData(int idx, preset &p){
 
   copyToMemory(_data, _datalen, p);
 
-  auto _err = FS.write_file(_PRESET_FILECODE | (idx+1), _data, _datalen);
+  auto _err = EEPROM_FS.write_file(_PRESET_FILECODE | (idx+1), _data, _datalen);
   if(_err != fs_error::ok)
     return preset_error::storage_fault;
   return preset_error::no_error;
@@ -156,15 +164,14 @@ preset_error presetData::_resizePreset(uint16_t len){
 preset *presetData::_getData(int idx){
   if(idx < 0 && idx >= _presetLen)
     return NULL;
-  
-  // TODO set last used preset
 
   uint16_t _fpcode = _PRESET_FILECODE | _fpreset_codes[idx];
-  size_t _datalen = FS.file_size(_fpcode);
+  size_t _datalen = EEPROM_FS.file_size(_fpcode);
   char *_data = (char*)malloc(_datalen);
   
-  FS.read_file(_fpcode, _data, NULL, NULL);
-  FS.complete_tasks();
+  EEPROM_FS.read_file(_fpcode, _data, NULL, NULL);
+  EEPROM_FS.complete_tasks();
+  Serial.printf("done reading\n");
 
   preset *_currentPreset = new preset();
   setPresetFromMem(_data, _datalen, *_currentPreset);
@@ -177,40 +184,57 @@ preset_error presetData::_checkStorage(){
   return preset_error::no_error;
 }
 
-// TODO code review for not using storage
-//  in getPreset, it will create another object, so don't use 
 #else
-#ifndef PRESET_CONST_LEDNUM
-#error Please define how many led if using hardcoded preset
-#endif
 
+//  in getPreset, it will create another object, so don't use 
 presetData::presetData(){
-  _presets = (preset**)malloc(sizeof(preset*)*MAX_PRESET_NUM);
-  for(int i = 0; i < MAX_PRESET_NUM; i++)
-    _presets[i] = NULL;
   _presetLen = 0;
+  _lastPreset = 0;
+
+  _presetDatas = (char**)malloc(0);
+  _presetDatasLen = (size_t*)malloc(0);
 }
 // if nothing is used for storage, it will use user RAM as storage
 
 // since no data to get from, this will use hardcoded preset
 void presetData::_loadData(){
-  _presetLen = 1;
-  _lastPreset = 0;
+  _presetLen++;
 
-  _presets[0] = _new_def_preset();
+  preset *_p = _new_def_preset();
+  size_t _pbuflen = presetSizeInBytes(*_p);
+  char *_pbuf = (char*)malloc(_pbuflen);
+
+  copyToMemory(_pbuf, _pbuflen, *_p);
+
+  _presetDatas = (char**)realloc(_presetDatas, sizeof(char*)*_presetLen);
+  _presetDatas[_presetLen-1] = _pbuf;
+
+  _presetDatasLen = (size_t*)realloc(_presetDatasLen, sizeof(size_t)*_presetLen);
+  _presetDatasLen[_presetLen-1] = _pbuflen;
+
+  delete _p;
 }
 
 preset_error presetData::_setData(int idx, preset &p){
   if(idx < 0 || idx >= _presetLen)
     return preset_error::max_preset_exceeded;
+
+  if(_presetDatas[idx])
+    free(_presetDatas[idx]);
+
+  size_t _pbuflen = presetSizeInBytes(p);
+  char *_pbuf = (char*)malloc(_pbuflen);
   
-  preset *pre = _presets[idx];
-  if(!pre)
-    pre = new preset{}; 
-  *pre = p;
-  _presets[idx] = pre;
+  copyToMemory(_pbuf, _pbuflen, p);
+
+  _presetDatas[idx] = _pbuf;
+  _presetDatasLen[idx] = _pbuflen;
 
   return preset_error::no_error;
+}
+
+void presetData::_setLastUsedpreset(int idx){
+  _lastPreset = idx;
 }
 
 preset_error presetData::_resizePreset(uint16_t len){
@@ -218,18 +242,30 @@ preset_error presetData::_resizePreset(uint16_t len){
     return preset_error::max_preset_exceeded;
 
   // just in case if the not all data can be received
-  for(int i = 0; i < len; i++)
-    if(_presets[i]){
-      delete _presets[i];
-      _presets[i] = NULL;
-    }
+  // note, visualizer will send all preset data, so better free all the buffer
+  for(int i = 0; i < len; i++){
+    if(_presetDatas[i])
+      free(_presetDatas[i]);
+
+    _presetDatas[i] = NULL;
+    _presetDatasLen[i] = 0;
+  }
+
+  _presetDatas = (char**)realloc(_presetDatas, sizeof(char*)*len);
+  _presetDatasLen = (size_t*)realloc(_presetDatasLen, sizeof(size_t)*len);
+
+  _presetLen = len;
 
   return preset_error::no_error;
 }
 
 preset *presetData::_getData(int idx){
-  if(idx >= 0 && idx < _presetLen)
-    return _presets[idx];
+  if(idx >= 0 && idx < _presetLen){
+    preset *_p = new preset();
+    setPresetFromMem(_presetDatas[idx], _presetDatasLen[idx], *_p);
+
+    return _p;
+  }
   else
     return NULL;
 }
@@ -250,6 +286,10 @@ preset_error presetData::initPreset(){
 
 preset_error presetData::setPreset(uint16_t idx, preset &p){
   return _setData(idx, p);
+}
+
+void presetData::setLastUsedPreset(int idx){
+  _setLastUsedpreset(idx);
 }
 
 preset_error presetData::resizePreset(uint16_t len){
@@ -301,10 +341,10 @@ size_t presetData::copyToMemory(ByteIteratorR &memwrite, preset& p){
     return 0;
   
   Serial.printf("presetName, %s\n", p.presetName.c_str());
-  R_IFFALSE(memwrite.setVar(p.presetName.c_str(), p.presetName.size()));
+  R_IFFALSE(memwrite.setVarStr(p.presetName.c_str(), p.presetName.size()));
 
   char *dummychar = (char*)calloc(sizeof(char), MAX_PRESET_NAME_LENGTH-p.presetName.size());
-  R_IFFALSE(memwrite.setVar(dummychar, MAX_PRESET_NAME_LENGTH-p.presetName.size()));
+  R_IFFALSE(memwrite.setVarStr(dummychar, MAX_PRESET_NAME_LENGTH-p.presetName.size()));
   free(dummychar);
   Serial.printf("memwrite %d\n", memwrite.available());
   
@@ -321,16 +361,21 @@ size_t presetData::copyToMemory(ByteIteratorR &memwrite, preset& p){
 
   Serial.printf("memwrite %d\n", memwrite.available());
 
+  Serial.printf("colrange %d\n", p.colorRange.colors.size());
   R_IFFALSE(memwrite.setVar((uint16_t)p.colorRange.colors.size()));
   for(auto col: p.colorRange.colors){
     R_IFFALSE(memwrite.setVar(col.first));
     R_IFFALSE(memwrite.setVar(col.second));
   }
 
+  Serial.printf("memwrite %d\n", memwrite.available());
+
+  Serial.printf("parts %d\n", p.splitParts.size());
   R_IFFALSE(memwrite.setVar((uint16_t)p.splitParts.size()));
   for(int i = 0; i < p.splitParts.size(); i++)
     R_IFFALSE(presetData::copyPartToMemory(memwrite, p.splitParts[i]));
 
+  Serial.printf("memwrite %d\n", memwrite.available());
   return memwrite.tellidx();
 }
 
@@ -343,7 +388,7 @@ bool presetData::setPresetFromMem(ByteIterator &bi, preset &p){
     return false;
   
   char _tmp[MAX_PRESET_NAME_LENGTH+1];
-  if(bi.getVar(_tmp, MAX_PRESET_NAME_LENGTH) != MAX_PRESET_NAME_LENGTH)
+  if(bi.getVarStr(_tmp, MAX_PRESET_NAME_LENGTH) != MAX_PRESET_NAME_LENGTH)
     return false;
   _tmp[MAX_PRESET_NAME_LENGTH] = '\0';
 
@@ -399,7 +444,7 @@ size_t presetData::presetSizeInBytes(int idx){
   if(idx >= _PRESET_MAXCOUNT)
     return 0;
 
-  return FS.file_size(_PRESET_FILECODE | _fpreset_codes[idx]);
+  return EEPROM_FS.file_size(_PRESET_FILECODE | _fpreset_codes[idx]);
 #else
   preset *data = getPreset(idx);
   if(!data)

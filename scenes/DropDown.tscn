@@ -98,13 +98,13 @@ __meta__ = {
 [node name="1" type="HBoxContainer" parent="VBoxContainer/DropdownPanel/1"]
 margin_top = 10.0
 margin_right = 1024.0
-margin_bottom = 380.0
+margin_bottom = 386.0
 alignment = 1
 
 [node name="1" type="VBoxContainer" parent="VBoxContainer/DropdownPanel/1/1"]
 margin_left = 10.0
 margin_right = 510.0
-margin_bottom = 370.0
+margin_bottom = 376.0
 
 [node name="1" type="Label" parent="VBoxContainer/DropdownPanel/1/1/1"]
 margin_right = 500.0
@@ -121,29 +121,17 @@ __meta__ = {
 "_edit_use_anchors_": false
 }
 
-[node name="3" type="ScrollContainer" parent="VBoxContainer/DropdownPanel/1/1/1"]
+[node name="3" type="HBoxContainer" parent="VBoxContainer/DropdownPanel/1/1/1"]
 margin_top = 52.0
 margin_right = 500.0
-margin_bottom = 352.0
-rect_min_size = Vector2( 500, 300 )
-
-[node name="1" type="VBoxContainer" parent="VBoxContainer/DropdownPanel/1/1/1/3"]
-margin_right = 500.0
-margin_bottom = 20.0
-rect_min_size = Vector2( 500, 0 )
-custom_constants/separation = 10
-
-[node name="1" type="HBoxContainer" parent="VBoxContainer/DropdownPanel/1/1/1/3/1"]
-margin_right = 500.0
-margin_bottom = 20.0
+margin_bottom = 72.0
 alignment = 1
 
-[node name="1" type="RichTextLabel" parent="VBoxContainer/DropdownPanel/1/1/1/3/1/1"]
+[node name="1" type="RichTextLabel" parent="VBoxContainer/DropdownPanel/1/1/1/3"]
 margin_left = 153.0
 margin_right = 283.0
 margin_bottom = 20.0
-rect_min_size = Vector2( 130, 20 )
-custom_fonts/bold_font = ExtResource( 6 )
+rect_min_size = Vector2( 130, 0 )
 bbcode_enabled = true
 bbcode_text = "[center][b]Sandbox Mode [color=#{0}]{1}[/color][/b][/center]"
 text = "Sandbox Mode {1}"
@@ -152,7 +140,7 @@ __meta__ = {
 "_edit_use_anchors_": false
 }
 
-[node name="2" type="Button" parent="VBoxContainer/DropdownPanel/1/1/1/3/1/1"]
+[node name="2" type="Button" parent="VBoxContainer/DropdownPanel/1/1/1/3"]
 margin_left = 287.0
 margin_right = 347.0
 margin_bottom = 20.0
@@ -162,23 +150,34 @@ __meta__ = {
 "_edit_use_anchors_": false
 }
 
+[node name="4" type="ScrollContainer" parent="VBoxContainer/DropdownPanel/1/1/1"]
+margin_top = 76.0
+margin_right = 500.0
+margin_bottom = 376.0
+rect_min_size = Vector2( 500, 300 )
+
+[node name="1" type="VBoxContainer" parent="VBoxContainer/DropdownPanel/1/1/1/4"]
+margin_right = 500.0
+rect_min_size = Vector2( 500, 0 )
+custom_constants/separation = 10
+
 [node name="2" type="VBoxContainer" parent="VBoxContainer/DropdownPanel/1/1"]
 margin_left = 514.0
 margin_right = 1014.0
-margin_bottom = 370.0
+margin_bottom = 376.0
 rect_min_size = Vector2( 500, 0 )
 custom_constants/separation = 10
 alignment = 1
 
 [node name="1" parent="VBoxContainer/DropdownPanel/1/1/2" instance=ExtResource( 10 )]
-margin_top = 59.0
+margin_top = 62.0
 margin_right = 500.0
-margin_bottom = 84.0
+margin_bottom = 87.0
 
 [node name="2" type="Label" parent="VBoxContainer/DropdownPanel/1/1/2"]
-margin_top = 94.0
+margin_top = 97.0
 margin_right = 500.0
-margin_bottom = 176.0
+margin_bottom = 179.0
 rect_min_size = Vector2( 0, 82 )
 text = "Input Sound Info
 
@@ -191,9 +190,9 @@ __meta__ = {
 }
 
 [node name="Panel" type="Panel" parent="VBoxContainer/DropdownPanel/1/1/2"]
-margin_top = 186.0
+margin_top = 189.0
 margin_right = 500.0
-margin_bottom = 188.0
+margin_bottom = 191.0
 rect_min_size = Vector2( 0, 2 )
 custom_styles/panel = SubResource( 4 )
 __meta__ = {
@@ -201,9 +200,9 @@ __meta__ = {
 }
 
 [node name="3" type="Label" parent="VBoxContainer/DropdownPanel/1/1/2"]
-margin_top = 198.0
+margin_top = 201.0
 margin_right = 500.0
-margin_bottom = 280.0
+margin_bottom = 283.0
 rect_min_size = Vector2( 0, 82 )
 text = "Controller Info
 
@@ -212,9 +211,9 @@ Number of LED: {1}"
 align = 1
 
 [node name="4" type="HBoxContainer" parent="VBoxContainer/DropdownPanel/1/1/2"]
-margin_top = 290.0
+margin_top = 293.0
 margin_right = 500.0
-margin_bottom = 310.0
+margin_bottom = 313.0
 alignment = 1
 
 [node name="1" type="HBoxContainer" parent="VBoxContainer/DropdownPanel/1/1/2/4"]

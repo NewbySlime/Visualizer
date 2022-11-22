@@ -11,16 +11,26 @@ void draw_text::checkRefreshText(Adafruit_GFX *disp){
 
     if(_txt1){
       disp->setTextSize(_txtsize1);
-      disp->getTextBounds(_txt1, 0, 0, &_dmpi, &_dmpi, &_txt1w, &_txt1h);
+      if(strlen(_txt1))
+        disp->getTextBounds(_txt1, 0, 0, &_dmpi, &_dmpi, &_txt1w, &_txt1h);
+      else
+        disp->getTextBounds("0", 0, 0, &_dmpi, &_dmpi, &_txt1w, &_txt1h);
     }
 
     if(_txt2){
       disp->setTextSize(_txtsize2);
-      disp->getTextBounds(_txt2, 0, 0, &_dmpi, &_dmpi, &_txt2w, &_txt2h);
+      if(strlen(_txt2))
+        disp->getTextBounds(_txt2, 0, 0, &_dmpi, &_dmpi, &_txt2w, &_txt2h);
+      else
+        disp->getTextBounds("0", 0, 0, &_dmpi, &_dmpi, &_txt2w, &_txt2h);
     }
 
     onRefreshText(disp);
   }
+}
+
+void draw_text::setRefreshFlag(){
+  _refreshText = true;
 }
 
 void draw_text::onDraw(drawable_cbparam &param){
@@ -28,7 +38,11 @@ void draw_text::onDraw(drawable_cbparam &param){
     Adafruit_GFX *disp = ((displayHandler*)param.disphandler)->getdisplay();
     checkRefreshText(disp);
 
-    int16_t txt1posx = (param.sizex/2), txt1posy = (param.sizey/2);
+    int16_t txt1posx = (param.sizex/2), txt1posy;
+    if(_txt1h*_txt2h)
+      txt1posy = (param.sizey*_txt1h)/(_txt1h+_txt2h);
+    else
+      txt1posy = (param.sizey-_txt1h)/2;
 
     // text2
     if(_txt2 && _currtxttype != Center){
@@ -72,6 +86,16 @@ void draw_text::onDraw(drawable_cbparam &param){
 
 void draw_text::useText(const char *txt1, const char *txt2){
   _txt1 = txt1; _txt2 = txt2;
+  _refreshText = true;
+}
+
+void draw_text::useText1(const char *txt){
+  _txt1 = txt;
+  _refreshText = true;
+}
+
+void draw_text::useText2(const char *txt){
+  _txt2 = txt;
   _refreshText = true;
 }
 

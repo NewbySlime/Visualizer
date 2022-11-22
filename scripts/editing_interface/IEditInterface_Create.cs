@@ -11,7 +11,7 @@ public interface IEditInterface{
 
 public class IEditInterface_Create: AutoloadClass<IEditInterface_Create>{
   [Export]
-  private PackedScene ECheck, EChoice, ESlider, EText, EStaticText, EButton;
+  private PackedScene ECheck, EChoice, ESlider, EText, EStaticText, EButton, EApplyCancel;
 
   public enum InterfaceType{
     Check,
@@ -19,7 +19,8 @@ public class IEditInterface_Create: AutoloadClass<IEditInterface_Create>{
     Slider,
     Text,
     StaticText,
-    Button
+    Button,
+    ApplyCancel
   }
 
   public struct EditInterfaceContent{
@@ -70,6 +71,10 @@ public class IEditInterface_Create: AutoloadClass<IEditInterface_Create>{
         
         case InterfaceType.Button:
           Ie = EButton.Instance<EditButton>();
+          break;
+        
+        case InterfaceType.ApplyCancel:
+          Ie = EApplyCancel.Instance<EditApplyCancel>();
           break;
       }
 

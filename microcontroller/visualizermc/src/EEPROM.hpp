@@ -10,13 +10,13 @@ class EEPROM_Class{
     typedef void (*EEPROM_Cb)(void*);
 
   protected:
+    uint8_t _addr;
     uint8_t _addresssize;
     
     // called when needed to use address as memory address
     virtual void _setAddress(uint32_t memaddr){}
 
   private:
-    uint8_t _addr;
     size_t _size, _curmemaddr = 0, _pagesize;
     uint16_t _delayms;
     bool _memlimit = false;
@@ -84,10 +84,30 @@ class AT24C256: public EEPROM_Class{
     AT24C256(uint8_t address): EEPROM_Class(
       address,
       32768,
-      64,
+      16,
       5
     ){
       _addresssize = sizeof(uint16_t);
+    }
+};
+
+
+// TODO this one haven't been tested
+class AT24C16: public EEPROM_Class{
+  protected:
+    void _setAddress(uint32_t address){
+      _addr = _addr & 0b1111000;
+      _addr = _addr | ((address >> 8) & 0b111);
+    }
+
+  public:
+    AT24C16(uint8_t address): EEPROM_Class(
+      address,
+      2048,
+      16,
+      11
+    ){
+      _addresssize = sizeof(uint8_t);
     }
 };
 

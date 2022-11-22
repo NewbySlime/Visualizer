@@ -29,7 +29,8 @@ enum preset_error{
 enum preset_colorMode{
   Static_c,
   RGB_p,
-  Sound
+  Sound,
+  _StopVis
 };
 
 enum preset_brightnessMode{
@@ -79,7 +80,8 @@ class presetData{
 
     void _updateFileCode();
 #else
-    preset **_presets;
+    size_t *_presetDatasLen;
+    char **_presetDatas;
 #endif
 
     preset_error _checkStorage();
@@ -87,6 +89,7 @@ class presetData{
     // function only called once
     void _loadData();
     preset_error _setData(int idx, preset &p);
+    void _setLastUsedpreset(int idx);
     preset_error _resizePreset(uint16_t len);
     preset *_getData(int idx);
 
@@ -95,6 +98,7 @@ class presetData{
 
     preset_error initPreset();
     preset_error setPreset(uint16_t idx, preset &p);
+    void setLastUsedPreset(int idx);
 
     // this will delete all preset data
     preset_error resizePreset(uint16_t len);

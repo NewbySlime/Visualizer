@@ -32,4 +32,8 @@ public class PopupEdit: Popup{
     IEditInterface_Create.Autoload.RemoveAllChild(_vbcont);
     IEditInterface_Create.Autoload.CreateAndAdd(_vbcont, this, "_on_optionChanged", IE);
   }
+
+  public void Exit(){
+    Visible = false;
+  }
 }

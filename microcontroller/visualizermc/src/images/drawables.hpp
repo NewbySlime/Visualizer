@@ -49,8 +49,8 @@ class draw_text: public drawable{
       Center,
       Top_Bottom
     };
-  
-  protected:
+
+  private:
     bool _drawtext = true, _refreshText = false;
 
     TextType _currtxttype = Center;
@@ -58,15 +58,19 @@ class draw_text: public drawable{
     uint16_t _txt1w, _txt1h, _txt2w, _txt2h, _txtsize1, _txtsize2, _txtcolor1, _txtcolor2;
 
     void checkRefreshText(Adafruit_GFX *disp);
-
-  private:
+  
+  protected:
     // will be called when it needs to refresh
     virtual void onRefreshText(Adafruit_GFX *disp){}
+    void setRefreshFlag();
 
   public:
     virtual void onDraw(drawable_cbparam &param);
 
-    void useText(const char *txt1, const char *txt2);
+    // can pass NULL if no text to display
+    virtual void useText(const char *txt1, const char *txt2);
+    virtual void useText1(const char *txt);
+    virtual void useText2(const char *txt);
     void useSize(uint16_t size1, uint16_t size2);
     void useColor(uint16_t color1, uint16_t color2);
     void changeTextType(TextType type);
@@ -74,7 +78,7 @@ class draw_text: public drawable{
 
 
 // this will also handle the rtc module
-class draw_time: public draw_text{
+class draw_time: public draw_text, public Idraw_interval{
   private:
     bool _usemini = false;
     bool _drawmiddle = true;
@@ -85,17 +89,11 @@ class draw_time: public draw_text{
 
     uint8_t _minute = 0, _hour = 0;
 
-    int16_t _time1s = 0;
-    int32_t _timeup = 0;
-
-    void _onupdate1s();
-    void _onupdatetime();
     void onRefreshText(Adafruit_GFX *disp);
 
   public:
     draw_time();
 
-    // don't forget to call this in derived class
     void onDraw(drawable_cbparam &param);
     void onVisible(bool visible);
 
@@ -103,8 +101,51 @@ class draw_time: public draw_text{
     DateTime gettime();
 
     void drawmiddlechar(bool _b);
+};
 
-    void bindRTC(RTC_I2C *rtc);
+
+// this class is meant to draw ui like loading... and some stuff like applying and cancelling
+class draw_loadapply: public draw_text, public Idraw_interval{
+  protected:
+    const char *_txt_applied, *_txt_cancelled;
+    char *__txt1, *__txt2;
+    size_t __txt1len, __txt2len;
+    size_t _dotidx;
+
+    bool __txt1_usedots, __txt2_usedots;
+    bool _loading_state;
+
+  public:
+    draw_loadapply();
+
+    void onDraw(drawable_cbparam &param);
+    void onVisible(bool visible);
+
+    // note that this will make another buffer to copy this data
+    void useText(const char *txt1, const char *txt2);
+    void useText1(const char *txt);
+    void useText2(const char *txt);
+
+    void useDotLoad(bool txt1, bool txt2);
+    
+    void useText_applied(const char *txt);
+    void useText_cancelled(const char *txt);
+
+    // this will change the txt2
+    // and this will stop the loading state
+    void onApplied();
+
+    // this will change the txt2
+    // and this will stop the loading state
+    void onCancelled();
+
+    // this will change the txt2
+    // and this will NOT stop the loading state
+    void onNormal();
+  
+    // change if in state of loading or not
+    void onLoading();
+    void onDoneLoading();
 };
 
 

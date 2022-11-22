@@ -25,7 +25,7 @@ int __vis_init(){
   _errorPreset->splitParts = std::vector<part>{
     part{
       .start_led = 0,
-      .end_led = PRESET_CONST_LEDNUM,
+      .end_led = CONST_LEDNUM,
       .range_start = 0.0f,
       .range_end = 1.0f,
       .reversed = false,
@@ -51,7 +51,7 @@ int __vis_init(){
   _loadingPreset->splitParts = std::vector<part>{
     part{
       .start_led = 0,
-      .end_led = PRESET_CONST_LEDNUM,
+      .end_led = CONST_LEDNUM,
       .range_start = 0.0f,
       .range_end = 1.0f,
       .reversed = false,
@@ -83,73 +83,79 @@ void visualizer::update(){
   unsigned long deltaMs = _currMs < _lastMs? _currMs+(0xffffffffU-_lastMs): _currMs-_lastMs;
   _lastMs = _currMs;
 
-  _colorOffset += _currentPreset->speedChange*deltaMs/1000.0f;
-  
-  float _dmp;
-  _colorOffset = modff(_colorOffset, &_dmp);
+  if(_currentPreset->colorMode != preset_colorMode::_StopVis){
+    _colorOffset += _currentPreset->speedChange*deltaMs/1000.0f;
+    
+    float _dmp;
+    _colorOffset = modff(_colorOffset, &_dmp);
 
-  for(int i = 0; i < _currentPreset->splitParts.size(); i++){
-    auto &split = _currentPreset->splitParts[i];
-    // getting color in static color mode
-    color static_col = _currentPreset->colorRange.getColor(_currentPreset->ValuePosx);
-    // number associated with calculating position in rgb mode
-    float _n = (split.range_end - split.range_start)/(float)(split.end_led-split.start_led);
+    for(int i = 0; i < _currentPreset->splitParts.size(); i++){
+      auto &split = _currentPreset->splitParts[i];
+      // getting color in static color mode
+      color static_col = _currentPreset->colorRange.getColor(_currentPreset->ValuePosx);
+      // number associated with calculating position in rgb mode
+      float _n = (split.range_end - split.range_start)/(float)(split.end_led-split.start_led);
 
-    for(int ledidx = split.start_led; ledidx < split.end_led; ledidx++){
-      color _col(0xffffff);
-      preset_colorMode __newcolmode = _currentPreset->colorMode;
+      for(int ledidx = split.start_led; ledidx < split.end_led; ledidx++){
+        color _col(0xffffff);
+        preset_colorMode __newcolmode = _currentPreset->colorMode;
 
-      // setting the brightness
-      _col = _col * _currentPreset->brightness;
+        // setting the brightness
+        _col = _col * _currentPreset->brightness;
 
-      float _intensity = 0.0f;
-      if(_currentPreset->colorMode == preset_colorMode::Sound){
-        float posrange = (float)(ledidx-split.start_led)*_n+split.range_start;
-        _intensity = _sounddata[(int)floor(posrange*_ledlen+split.channel*_ledlen)];
+        float _intensity = 0.0f;
+        if(_currentPreset->colorMode == preset_colorMode::Sound){
+          float posrange = (float)(ledidx-split.start_led)*_n+split.range_start;
+          _intensity = _sounddata[(int)floor(posrange*_ledlen+split.channel*_ledlen)];
 
-        switch(_currentPreset->brightnessMode){
-          // not used
-          break; case preset_brightnessMode::Static_b:{
+          switch(_currentPreset->brightnessMode){
+            // not used
+            break; case preset_brightnessMode::Static_b:{
 
+            }
+
+            break; case preset_brightnessMode::Union:{
+              float f = (_unionSoundData[split.channel]-_currentPreset->minIntensity)/(_currentPreset->maxIntensity-_currentPreset->minIntensity);
+
+              _col = _col * f;
+            }
+
+            break; case preset_brightnessMode::Individual:{
+              float f = (_intensity-_currentPreset->minIntensity)/(_currentPreset->maxIntensity-_currentPreset->minIntensity);
+
+              _col = _col * f;
+            }
           }
 
-          break; case preset_brightnessMode::Union:{
-            float f = (_unionSoundData[split.channel]-_currentPreset->minIntensity)/(_currentPreset->maxIntensity-_currentPreset->minIntensity);
+          __newcolmode = _currentPreset->colorShifting;
+        }
 
-            _col = _col * f;
+        switch(__newcolmode){
+          break; case preset_colorMode::Static_c:{
+            _col = _col * static_col;
           }
 
-          break; case preset_brightnessMode::Individual:{
-            float f = (_intensity-_currentPreset->minIntensity)/(_currentPreset->maxIntensity-_currentPreset->minIntensity);
+          break; case preset_colorMode::RGB_p:{
+            float posrange = 
+              (_currentPreset->inUnion? 1.0f: (float)(ledidx-split.start_led)*_n)
+              *_currentPreset->windowSlide+split.range_start+_colorOffset;
 
-            _col = _col * f;
+            posrange = modff(posrange, &_dmp);
+            _col = _col * _currentPreset->colorRange.getColor(posrange);
+          }
+
+          break; case preset_colorMode::Sound:{
+            _col = _col * _currentPreset->colorRange.getColor(_intensity);
           }
         }
 
-        __newcolmode = _currentPreset->colorShifting;
+        _coldata[ledidx] = _col;
       }
-
-      switch(__newcolmode){
-        break; case preset_colorMode::Static_c:{
-          _col = _col * static_col;
-        }
-
-        break; case preset_colorMode::RGB_p:{
-          float posrange = 
-            (_currentPreset->inUnion? 1.0f: (float)(ledidx-split.start_led)*_n)
-            *_currentPreset->windowSlide+split.range_start+_colorOffset;
-
-          posrange = modff(posrange, &_dmp);
-          _col = _col * _currentPreset->colorRange.getColor(posrange);
-        }
-
-        break; case preset_colorMode::Sound:{
-          _col = _col * _currentPreset->colorRange.getColor(_intensity);
-        }
-      }
-
-      _coldata[ledidx] = _col;
     }
+  }
+  else{
+    for(int i = 0; i < _ledlen*_manyChannel; i++)
+      _coldata[i] = color{0};
   }
 }
 
@@ -200,4 +206,12 @@ void visualizer::useLoadingPreset(){
 
 void visualizer::useErrorPreset(){
   _currentPreset = _errorPreset;
+}
+
+void visualizer::setLedMode(preset_colorMode colmode){
+  _currentPreset->colorMode = colmode;
+}
+
+preset_colorMode visualizer::getLedMode(){
+  return _currentPreset->colorMode;
 }

@@ -70,7 +70,8 @@ void socket_queuedata(char *data, int datalen){
 }
 
 void socket_disconnect(){
-  _socket_queuedata(CLSOCKMESSAGE, NULL, 0);
+  if(wclient.connected())
+    _socket_queuedata(CLSOCKMESSAGE, NULL, 0);
 }
 
 void set_socketcallback(S_Cb_ondata cb){
@@ -126,7 +127,7 @@ void _socket_update(){
               ByteIteratorR _bir{_buf, buflen};
               _bir.setVar(SENDMESSAGE);
               _bir.setVar(_currdata.second.second);
-              _bir.setVar(_currdata.second.first, _currdata.second.second);
+              _bir.setVarStr(_currdata.second.first, _currdata.second.second);
 
               wclient.write(_buf, buflen);
             }

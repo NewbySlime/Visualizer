@@ -12,6 +12,7 @@ public class PopupEdit_IPPort: PopupEdit{
   private delegate void on_optionchanged_ipport(uint ip, ushort port);
 
   private VBoxContainer _editCont;
+  private HBoxContainer _btnCont;
   private uint _ip = 0;
   private ushort _port = 0;
 
@@ -50,12 +51,19 @@ public class PopupEdit_IPPort: PopupEdit{
         for(int i = 0; i < 4 && i < strs.Length; i++){
           try{
             int n = strs[i].ToInt();
+            if(intdata[i] == 0 && intdata[i] != n){
+              strs[i] = strs[i].Trim(new char[]{'0'});
+              n = strs[i].ToInt();
+            }
+            
             if(n > 0xff)
               n = 0xff;
-            
+
             intdata[i] = (byte)n;
           }
-          catch{}
+          catch{
+            intdata[i] = 0;
+          }
         }
 
         _data.strdata = string.Format("{0}.{1}.{2}.{3}", intdata[0], intdata[1], intdata[2], intdata[3]);
@@ -140,30 +148,35 @@ public class PopupEdit_IPPort: PopupEdit{
       }
     };
 
-    IEditInterface_Create.EditInterfaceContent[] contentsbtn = {
-      new IEditInterface_Create.EditInterfaceContent{
-        TitleName = "Apply",
-        EditType = IEditInterface_Create.InterfaceType.Button,
-        Properties = new EditButton.set_param{},
-        ID = 3
-      },
-
-      new IEditInterface_Create.EditInterfaceContent{
-        TitleName = "Cancel",
-        EditType = IEditInterface_Create.InterfaceType.Button,
-        Properties = new EditButton.set_param{},
-        ID = 4
-      }
-    };
-
     IEditInterface_Create.Autoload.CreateAndAdd(_editCont, this, "_onChange", contents);
 
 
-    HBoxContainer _btnCont = new HBoxContainer();
-    _editCont.AddChild(_btnCont);
-    _btnCont.Alignment = BoxContainer.AlignMode.Center;
+    // setting up the button container
+    if(_btnCont == null){
+      _btnCont = new HBoxContainer();
+      _editCont.AddChild(_btnCont);
+      _btnCont.Alignment = BoxContainer.AlignMode.Center;
 
-    IEditInterface_Create.Autoload.CreateAndAdd(_btnCont, this, "_onChange", contentsbtn);
+      IEditInterface_Create.EditInterfaceContent[] contentsbtn = {
+        new IEditInterface_Create.EditInterfaceContent{
+          TitleName = "Apply",
+          EditType = IEditInterface_Create.InterfaceType.Button,
+          Properties = new EditButton.set_param{},
+          ID = 3
+        },
+
+        new IEditInterface_Create.EditInterfaceContent{
+          TitleName = "Cancel",
+          EditType = IEditInterface_Create.InterfaceType.Button,
+          Properties = new EditButton.set_param{},
+          ID = 4
+        }
+      };
+
+      IEditInterface_Create.Autoload.CreateAndAdd(_btnCont, this, "_onChange", contentsbtn);
+    }
+
+    _editCont.MoveChild(_btnCont, _editCont.GetChildCount()-1);
   }
 
 
