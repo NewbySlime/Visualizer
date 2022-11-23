@@ -32,7 +32,6 @@ void _PWD_saveToStorage(){
   }
 
   EEPROM_FS.write_file(PASSWORD_FILEID, _data, _datasize);
-  //free(_data);
 }
 
 

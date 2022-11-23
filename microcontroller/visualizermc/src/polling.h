@@ -1,8 +1,11 @@
 #ifndef POLLING_HEADER
 #define POLLING_HEADER
 
-bool polling_addfunc(void(*fn)(void*), void *obj);
-bool polling_removefunc(void *obj);
+
+typedef void (*PollingCallbackArg)(void *obj);
+
+bool polling_addfunc(PollingCallbackArg cb, void *obj);
+bool polling_removefunc(PollingCallbackArg cb, void *obj);
 
 void polling_update();
 

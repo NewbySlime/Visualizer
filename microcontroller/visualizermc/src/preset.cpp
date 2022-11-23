@@ -317,6 +317,9 @@ int presetData::getLastUsedPresetIdx(){
 size_t presetData::presetSizeInBytes(preset &p){
   return
     sizeof(preset) +
+  
+    // recalculate some variables
+    -sizeof(int) + sizeof(preset::inUnion) +
 
     // subtract the dynamic storage size
     -sizeof(p.presetName) +
@@ -328,7 +331,12 @@ size_t presetData::presetSizeInBytes(preset &p){
 
     // the dynamic storages will have a number in the front of the data, as the length
     sizeof(uint16_t) + (p.colorRange.colors.size() * (sizeof(color)+sizeof(float))) +
-    sizeof(uint16_t) + (p.splitParts.size() * sizeof(part))
+    sizeof(uint16_t) + (p.splitParts.size() * (
+      sizeof(part)
+
+      // recalculate some variables
+      -sizeof(int) + sizeof(part::reversed)
+    ));
   ;
 }
 
@@ -347,7 +355,7 @@ size_t presetData::copyToMemory(ByteIteratorR &memwrite, preset& p){
   R_IFFALSE(memwrite.setVarStr(dummychar, MAX_PRESET_NAME_LENGTH-p.presetName.size()));
   free(dummychar);
   Serial.printf("memwrite %d\n", memwrite.available());
-  
+
   R_IFFALSE(memwrite.setVar(p.colorMode));
   R_IFFALSE(memwrite.setVar(p.brightness));
   R_IFFALSE(memwrite.setVar(p.ValuePosx));

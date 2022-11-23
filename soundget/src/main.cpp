@@ -777,19 +777,18 @@ void SendFreqDataToMCU(const float* amp, int length, const WAVEFORMATEX *wavform
 }
 
 void SendTimeDataToMCU(){
-  uint32_t _utime = (uint32_t)time(NULL);
-
+  time_t _utime = time(NULL);
   printf("unixtime %d\n", _utime);
 
   int _buflen =
     sizeof(uint16_t) +
-    sizeof(uint32_t)
+    sizeof(tm)
   ;
 
   char _buf[_buflen];
   ByteIteratorR _bir(_buf, _buflen);
   _bir.setVar(MCU_SETTIME);
-  _bir.setVar(_utime);
+  _bir.setVar(*localtime(&_utime));
 
   char *__buf = _buf;
   onMsgGet_ForwardMC(&__buf, &_buflen);

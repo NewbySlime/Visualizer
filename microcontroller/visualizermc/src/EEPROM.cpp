@@ -94,6 +94,7 @@ void EEPROM_Class::_timer_bufWrite(){
   if(_t_bytesent < _t_buflen && !_memlimit){
     _t_bytesent += _bufWrite(_t_address+_t_bytesent, _t_buf+_t_bytesent, _t_buflen-_t_bytesent);
     int _t = timer_setTimeout(_delayms, __onTimer, this);
+    Serial.printf("bufwrite id %d\n", _t);
   }
   else{
     _ready_use = true;
@@ -109,7 +110,7 @@ void EEPROM_Class::_polling_bufRead(){
     _p_byteread += _bufRead(_p_buf+_p_byteread, _p_buflen-_p_byteread);
   }
   else{
-    polling_removefunc(this);
+    polling_removefunc(__onPoll, this);
     _ready_use = true;
     
     if(_cb)

@@ -1,25 +1,53 @@
 #include "polling.h"
-#include "map"
 
 #include "Arduino.h"
 
-std::map<unsigned long long, void(*)(void*)> _functions;
+struct _pollingInfo{
+  PollingCallbackArg cb;
+  void *obj;
+};
 
-bool polling_addfunc(void(*fn)(void*), void *obj){
-  _functions[(unsigned long long)obj] = fn;
+
+std::vector<_pollingInfo> _pollingFunctions;
+
+bool operator<(const _pollingInfo &_pi1, const _pollingInfo &_pi2){
+  return _pi1.cb < _pi2.cb || (_pi1.cb == _pi2.cb && _pi1.obj < _pi2.obj);
+}
+
+bool operator==(const _pollingInfo &_pi1, const _pollingInfo &_pi2){
+  return _pi1.cb == _pi2.cb && _pi1.obj == _pi2.obj;
+}
+
+
+bool polling_addfunc(PollingCallbackArg cb, void *obj){
+  _pollingInfo _pi{
+    .cb = cb,
+    .obj = obj
+  };
+
+  auto _iter = std::lower_bound(_pollingFunctions.begin(), _pollingFunctions.end(), _pi);
+
+  _pollingFunctions.insert(_iter, _pi);
   return true;
 }
 
-bool polling_removefunc(void *obj){
-  if(_functions.find((unsigned long long)obj) == _functions.end())
+bool polling_removefunc(PollingCallbackArg cb, void *obj){
+  _pollingInfo _pi{
+    .cb = cb,
+    .obj = obj
+  };
+
+  auto _iter = std::find(_pollingFunctions.begin(), _pollingFunctions.end(), _pi);
+
+  if(_iter == _pollingFunctions.end())
     return false;
   
-  _functions.erase((unsigned long long)obj);
+  _pollingFunctions.erase(_iter);
   return true;
 }
 
 
 void polling_update(){
-  for(auto p: _functions)
-    p.second((void*)p.first);
+  for(auto pi: _pollingFunctions)
+    pi.cb(pi.obj);
 }

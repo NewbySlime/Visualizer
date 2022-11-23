@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include "ESP8266WiFi.h"
 
+#include "ESP8266TimerInterrupt.h"
+
 #include "timer.hpp"
 #include "polling.h"
 
@@ -12,10 +14,9 @@
 #include "display/display.hpp"
 #include "images/drawables.hpp"
 
-#include "FastLED.h"
-
 #include "string"
 #include "cmath"
+#include "time.h"
 
 #include "ByteIterator.hpp"
 #include "sensor4.hpp"
@@ -51,6 +52,8 @@ using namespace std;
 #define ENCRYPTKEY_FILEID 0x001F
 
 #define PRESETTIMEOUT 2000 * MAX_PRESET_NUM
+
+#define BATTERYCHECK_INTERVAL 10000
 
 #ifdef ESP8266
 const char *INFO_MCUNAME = "NodeMCU V2";
@@ -145,6 +148,7 @@ uint8_t battbar = 0;
 bool _rtc_found;
 
 DateTime _currtime;
+volatile int _secondsElapsed = 0;
 
 uint8_t _vis_uprate = VIS_DEFRATE;
 int _vis_timerid = -1;
@@ -176,6 +180,8 @@ bool _is_paired = false;
 bool _handshaked = false;
 int _handshaketimerid;
 
+ESP8266TimerInterrupt HardwareTimer;
+
 
 
 
@@ -191,6 +197,7 @@ void _wifistatelist(listDisplay_Interact**, void*);
 void _mediacontrollist(listDisplay_Interact**, void*);
 void _ledmodelist(listDisplay_Interact**, void*);
 void _onhandshaked();
+void _updateTime();
 
 
 
@@ -547,12 +554,13 @@ void _s_onforward(ByteIterator &_bi){
     }
 
     break; case MCU_SETTIME:{
-      uint32_t _time; _bi.getVar(_time);
-      Serial.printf("unixtime %d\n", _time);
-      _currtime = DateTime(_time);
+      tm _time; _bi.getVar(_time);
+      _currtime = DateTime(_time.tm_year, _time.tm_mon, _time.tm_mday, _time.tm_hour, _time.tm_min, _time.tm_sec);
 
       if(_rtc_found)
         rtc.adjust(_currtime);
+
+      _updateTime();
     }
 
 
@@ -857,10 +865,7 @@ void callbackSensor(sensor_actType acttype){
   }
 }
 
-void _onIterval1S(void *b){
-  _currtime = _currtime + TimeSpan(1);
-  dtime.settime(_currtime);
-
+void _batteryUpdate_sw(void *b){
   battbar = (battbar+1)%10;
   _batterylvl = (float)battbar/10;
   bbattbar.setbatterylevel(_batterylvl);
@@ -1166,7 +1171,87 @@ void _setupdrawings(){
 }
 
 
+
+/*      Precision timing      */
+#define TIME_POLLID 0x1
+void IRAM_ATTR _onTimeInterval(){
+  _secondsElapsed++;
+}
+
+void _updateTime(){
+  dtime.settime(_currtime);
+}
+
+void _timePolling(void*){
+  if(_secondsElapsed > 0){
+    _currtime = _currtime + TimeSpan(_secondsElapsed);
+    _secondsElapsed = 0;
+    _updateTime();
+  }
+}
+
+void _setupTime(){
+  // setting up rtc
+  _currtime = DateTime(F(__DATE__), F(__TIME__));
+  /*
+  _rtc_found = true;
+  if(!rtc.begin()){
+    Serial.printf("can't find rtc\n");
+    _rtc_found = false;
+  }
+
+  if(_rtc_found && !rtc.isrunning())
+    rtc.adjust(_currtime);
+  */
+
+  _updateTime();
+
+  // precision timer setup
+  timer1_attachInterrupt(_onTimeInterval);
+  timer1_write(1000000 * 5);                      // 1s * 5 ticks/us
+  timer1_enable(TIM_DIV16, TIM_EDGE, TIM_LOOP);
+
+  // polling for time draw
+  polling_addfunc(_timePolling, (void*)TIME_POLLID);
+}
+
+
 #ifdef DO_TEST_SKETCH
+  #ifdef DO_TEST_TIMER
+    int _idint1s = -1;
+    int _idint10s = -1;
+
+    void _onTimeout20s(void*){
+      Serial.printf("Timeout 20s\ndeleting 10s\n");
+      timer_deleteTimer(_idint10s);
+    }
+
+    void _onTimeout10s(void*){
+      Serial.printf("Timeout 10s\ndeleting 1s\n");
+      timer_deleteTimer(_idint1s);
+
+      _idint1s = -1;
+    }
+
+    void _onInterval1s(void*){
+      Serial.printf("Interval 1s\n");
+    }
+
+    void _onInterval7s(void*){
+      Serial.printf("Interval 7s\n");
+      if(_idint1s < 0){
+        Serial.printf("setting another timer\n");
+        _idint1s = timer_setInterval(1000, _onInterval1s, NULL);
+        _idint10s = timer_setTimeout(10000, _onTimeout10s, NULL);
+      }
+    }
+
+    void test_timer(){
+      timer_setInterval(7000, _onInterval7s, NULL);
+      timer_setInterval(20000, _onTimeout20s, NULL);
+    }
+  #endif
+
   #ifdef DO_TEST_EEPROM
     #define __TEST_EEPROM_BUFSIZE 64
     char __te_buffer[__TEST_EEPROM_BUFSIZE];
@@ -1339,6 +1424,10 @@ void setup() {
   Serial.begin(9600);
 
   #ifdef DO_TEST_SKETCH
+    #ifdef DO_TEST_TIMER
+      test_timer();
+    #endif
+
     #ifdef DO_TEST_EEPROM
       test_eeprom();
     #endif
@@ -1348,7 +1437,6 @@ void setup() {
     #endif
   #else
 
-  // TODO ????
   auto _fserror = EEPROM_FS.bind_storage(&_eeprom);
 
   if(_fserror == fs_error::storage_not_initiated){
@@ -1399,20 +1487,7 @@ void setup() {
     _setupdrawings();
   }
 
-  // setting up rtc
-  _currtime = DateTime(F(__DATE__), F(__TIME__));
-  /*
-  _rtc_found = true;
-  if(!rtc.begin()){
-    Serial.printf("can't find rtc\n");
-    _rtc_found = false;
-  }
-
-  if(_rtc_found && !rtc.isrunning())
-    rtc.adjust(_currtime);
-  */
-
-  TimeRandom.supplyTime(_currtime.unixtime());
+  _setupTime();
 
   // setting up led
   Serial1.begin(LEDDRIVER_BAUDRATE);
@@ -1421,6 +1496,8 @@ void setup() {
   // setting up visualizer
   _init_visualizer();
   _ledMode_setStr(vis->getLedMode());
+
+  TimeRandom.supplyTime(_currtime.unixtime());
 
   // getting encryption key
   if(EEPROM_FS.file_exist(ENCRYPTKEY_FILEID)){
@@ -1440,7 +1517,8 @@ void setup() {
     _doPairing();
   }
 
-  timer_setInterval(1000, _onIterval1S, NULL);
+  timer_setInterval(BATTERYCHECK_INTERVAL, _batteryUpdate_sw, NULL);
+
   #endif
 }
 
