@@ -169,15 +169,20 @@ rect_min_size = Vector2( 500, 0 )
 custom_constants/separation = 10
 alignment = 1
 
-[node name="1" parent="VBoxContainer/DropdownPanel/1/1/2" instance=ExtResource( 10 )]
-margin_top = 62.0
+[node name="flow" parent="VBoxContainer/DropdownPanel/1/1/2" instance=ExtResource( 10 )]
+margin_top = 45.0
 margin_right = 500.0
-margin_bottom = 87.0
+margin_bottom = 70.0
+
+[node name="sound_devices" parent="VBoxContainer/DropdownPanel/1/1/2" instance=ExtResource( 10 )]
+margin_top = 80.0
+margin_right = 500.0
+margin_bottom = 105.0
 
 [node name="2" type="Label" parent="VBoxContainer/DropdownPanel/1/1/2"]
-margin_top = 97.0
+margin_top = 115.0
 margin_right = 500.0
-margin_bottom = 179.0
+margin_bottom = 197.0
 rect_min_size = Vector2( 0, 82 )
 text = "Input Sound Info
 
@@ -190,9 +195,9 @@ __meta__ = {
 }
 
 [node name="Panel" type="Panel" parent="VBoxContainer/DropdownPanel/1/1/2"]
-margin_top = 189.0
+margin_top = 207.0
 margin_right = 500.0
-margin_bottom = 191.0
+margin_bottom = 209.0
 rect_min_size = Vector2( 0, 2 )
 custom_styles/panel = SubResource( 4 )
 __meta__ = {
@@ -200,9 +205,9 @@ __meta__ = {
 }
 
 [node name="3" type="Label" parent="VBoxContainer/DropdownPanel/1/1/2"]
-margin_top = 201.0
+margin_top = 219.0
 margin_right = 500.0
-margin_bottom = 283.0
+margin_bottom = 301.0
 rect_min_size = Vector2( 0, 82 )
 text = "Controller Info
 
@@ -211,9 +216,9 @@ Number of LED: {1}"
 align = 1
 
 [node name="4" type="HBoxContainer" parent="VBoxContainer/DropdownPanel/1/1/2"]
-margin_top = 293.0
+margin_top = 311.0
 margin_right = 500.0
-margin_bottom = 313.0
+margin_bottom = 331.0
 alignment = 1
 
 [node name="1" type="HBoxContainer" parent="VBoxContainer/DropdownPanel/1/1/2/4"]

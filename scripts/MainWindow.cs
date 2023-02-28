@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using System.Diagnostics;
 using System.Collections.Generic;
 
 
@@ -10,6 +11,11 @@ public class MainWindow: Control{
   private float _waitForSGConn;
   [Export]
   private string _errorSGDcMsg;
+  [Export]
+  private string _soundget_appname = "Soundget.exe";
+
+  [Export]
+  private float max_intensity = 20f;
 
   // constants
   private const int MaxPresetNameLength = 16, MaxSplits = 32;
@@ -93,7 +99,10 @@ public class MainWindow: Control{
     // [SET] the delay of the sound
     CFG_SG_DELAYMS = 0x0006,
     // [GET] the numbers of channels
-    CFG_SG_CHANNELS = 0x0007
+    CFG_SG_CHANNELS = 0x0007,
+    // [SET] setting the flow
+    // [GET] asking what the flow is
+    CFG_SG_FLOW = 0x0008
   }
 
   private enum _mcu_connState{
@@ -122,6 +131,11 @@ public class MainWindow: Control{
     MCU_GETMCUINFO = 0x280,
     MCU_GETMCUINFO_BATTERYLVL = 0x281
   }
+
+  private string[] _sg_flowtypes_str = new string[]{
+    "Render Device",
+    "Capture Device"
+  };
 
   private enum _sgconnerrorbutton_codes{
     RUNSG,
@@ -250,6 +264,9 @@ public class MainWindow: Control{
   // means 127.0.0.1
   private const uint _sockip = 0x0100007F;
   private SocketListener _sockListener;
+
+
+  private string _soundget_folderpath;
 
 
 
@@ -462,6 +479,8 @@ public class MainWindow: Control{
 
       _sgtimer.Stop();
       _onEditorReadyToUse();
+
+      _vis.SandboxMode = true;
     }
   }
 
@@ -487,6 +506,8 @@ public class MainWindow: Control{
         _dispSGError();
       
       _onEditorNotReadyToUse();
+
+      _vis.SandboxMode = false;
     }
   }
   
@@ -495,7 +516,13 @@ public class MainWindow: Control{
   }
 
   private void _run_sg(){
-
+    Process _sgproc = new Process{StartInfo = new ProcessStartInfo{
+      FileName = _soundget_folderpath + _soundget_appname,
+      UseShellExecute = false,
+      RedirectStandardError = false,
+      RedirectStandardOutput = false,
+      CreateNoWindow = true
+    }};
   }
 
   private void _quit_sg(){
@@ -563,7 +590,11 @@ public class MainWindow: Control{
   }
 
   private void _onChangeDev(int idx){
-    _sendSGSetConfig(_sg_configCodes.CFG_SG_INPUTDEVICE, BitConverter.GetBytes(idx));
+    _sendSGSetConfig(_sg_configCodes.CFG_SG_INPUTDEVICE, BitConverter.GetBytes((Int16)(idx-1)));
+  }
+
+  private void _onChangeFlow(int idx){
+    _sendSGSetConfig(_sg_configCodes.CFG_SG_FLOW, BitConverter.GetBytes((Int16)idx));
   }
 
   // this function will not send preset datas to mcu
@@ -1164,9 +1195,8 @@ public class MainWindow: Control{
   }
 
   private void _updatePresetDataMCU(){
-    _sendMsg_forward(_mcu_forwardCodes.MCU_UPDATEPRESETS, new byte[0]);
+    _sendMsg_forward(_mcu_forwardCodes.MCU_UPDATEPRESETS, BitConverter.GetBytes((ushort)_changed_presets.Count));
     _sendMsg_forward(_mcu_forwardCodes.MCU_USEPRESET, BitConverter.GetBytes((ushort)_presetIdx));
-    _sendMsg_forward(_mcu_forwardCodes.MCU_GETPRESETLEN, BitConverter.GetBytes((ushort)_changed_presets.Count));
 
     for(int i = 0; i < _changed_presets.Count; i++)
       _sendPresetDataMCU((ushort)i, _changed_presets[i]);
@@ -1279,7 +1309,7 @@ public class MainWindow: Control{
           EditType = IEditInterface_Create.InterfaceType.Slider,
           Properties = new EditSlider.set_param{
             value = _current_preset.SoundData.max_intensity,
-            max_value = 100.0f
+            max_value = max_intensity
           },
 
           ID = (int)_editContent.MaxIntensity
@@ -1290,7 +1320,7 @@ public class MainWindow: Control{
           EditType = IEditInterface_Create.InterfaceType.Slider,
           Properties = new EditSlider.set_param{
             value = _current_preset.SoundData.min_intensity,
-            max_value = 100.0f
+            max_value = max_intensity
           },
 
           ID = (int)_editContent.MinIntensity
@@ -1320,7 +1350,7 @@ public class MainWindow: Control{
     ushort code = BitConverter.ToUInt16(datas[0], 0);
     switch((_sg_configCodes)code){
       case _sg_configCodes.CFG_SG_INPUTDEVICESNAME:{
-        if(datas[1].Length <= sizeof(ushort))
+        if(datas[1].Length < sizeof(ushort))
           return;
         
         int offsetIndex = 0;
@@ -1328,7 +1358,8 @@ public class MainWindow: Control{
         ushort manydev = BitConverter.ToUInt16(datas[1], offsetIndex);
         offsetIndex += sizeof(ushort);
 
-        string[] names = new string[manydev];
+        string[] names = new string[manydev+1];
+        names[0] = "Default";
         for(int i = 0; i < manydev && offsetIndex < datas[1].Length; i++){
           int strlen = BitConverter.ToInt32(datas[1], offsetIndex);
           offsetIndex += sizeof(int);
@@ -1337,10 +1368,10 @@ public class MainWindow: Control{
           Array.Copy(datas[1], offsetIndex, str, 0, strlen);
           offsetIndex += strlen;
 
-          names[i] = new string(str);
+          names[i+1] = new string(str);
         }
 
-        _dropdown.SetSoundDevNames(names);
+        _dropdown.SetChoiceName(VisualizerDropdown.ChoiceType.Device, names);
       }
       break;
 
@@ -1360,7 +1391,7 @@ public class MainWindow: Control{
         ushort nchannel = BitConverter.ToUInt16(datas[1], offsetIndex);
         offsetIndex += sizeof(ushort);
 
-        _dropdown.SetSoundDevIndex(currentIndex);
+        _dropdown.SetChoiceIndex(VisualizerDropdown.ChoiceType.Device, currentIndex+1);
         _dropdown.SetCurrentSoundDevData(new string(devname), nchannel);
 
         _vis.Channels = nchannel;
@@ -1369,6 +1400,11 @@ public class MainWindow: Control{
 
       case _sg_configCodes.CFG_SG_CHANNELS:{
         _vis.Channels = BitConverter.ToUInt16(datas[1], 0);
+      }
+      break;
+
+      case _sg_configCodes.CFG_SG_FLOW:{
+        _dropdown.SetChoiceIndex(VisualizerDropdown.ChoiceType.Flow, BitConverter.ToInt16(datas[1], 0));
       }
       break;
     }
@@ -1606,6 +1642,7 @@ public class MainWindow: Control{
     // getting soundget datas
     _sendSGGetConfig(_sg_configCodes.CFG_SG_INPUTDEVICESNAME);
     _sendSGGetConfig(_sg_configCodes.CFG_SG_INPUTDEVICEDATA);
+    _sendSGGetConfig(_sg_configCodes.CFG_SG_FLOW);
     _dropdown.SetSGConnectedState(true);
 
     // getting mcu connected state
@@ -1674,11 +1711,14 @@ public class MainWindow: Control{
     _dropdown.Connect("on_connectbuttonpressed", this, "_doConnectMCU");
     _dropdown.Connect("on_setmcuaddrbuttonpressed", this, "_onSetMCUAddressBtn");
     _dropdown.Connect("on_changeindevice", this, "_onChangeDev");
+    _dropdown.Connect("on_changeflow", this, "_onChangeFlow");
     _dropdown.Connect("on_sgbuttonpressed", this, "_SGButtonPressed");
     _dropdown.Connect("on_sandboxbuttonpressed", this, "_sandboxButtonPressed");
     _dropdown.Connect("on_editpanelchanged", this, "_on_editPanelChanged");
     _dropdown.SetSGConnectedState(false);
     _dropdown.SetSandboxState(false);
+
+    _dropdown.SetChoiceName(VisualizerDropdown.ChoiceType.Flow, _sg_flowtypes_str);
 
     IEditInterface_Create.EditInterfaceContent[] _editCont = {
       new IEditInterface_Create.EditInterfaceContent{
@@ -1701,6 +1741,15 @@ public class MainWindow: Control{
 
 
   public override void _Ready(){
+    _soundget_folderpath = OS.GetExecutablePath();
+    int _separateidx = _soundget_folderpath.LastIndexOf('/');
+    if(_separateidx < 0)
+      _separateidx = _soundget_folderpath.LastIndexOf('\\');
+    
+    _separateidx++;
+    _soundget_folderpath = _soundget_folderpath.Remove(_separateidx);
+
+
     ErrorShowAutoload.Autoload.AddToControl(this);
 
     _sock_callbackSet = new Dictionary<int, _sock_callbacks>();

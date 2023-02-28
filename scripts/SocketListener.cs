@@ -54,11 +54,11 @@ public class SocketListener: Godot.Object{
   private void _StartListening(){
     bool isLocked = false;
     keepListening = true;
-    keepConnection = true;
 
     currentListener.Bind(endPoint);
     currentListener.Listen(1);
     while(keepListening){
+      keepConnection = true;
       try{
         Socket currSock = currentListener.Accept();
         EmitSignal("OnConnected");
@@ -166,8 +166,6 @@ public class SocketListener: Godot.Object{
       return;
     
     keepListening = false;
-
-    Disconnect();
     _AppendData(Socket_code.CLSOCKMESSAGE, null);
   }
 

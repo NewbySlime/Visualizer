@@ -9,6 +9,8 @@ public class VisualizerDropdown: Dropdown{
   [Signal]
   private delegate void on_changeindevice(int idx);
   [Signal]
+  private delegate void on_changeflow(int idx);
+  [Signal]
   private delegate void on_sgbuttonpressed();
   [Signal]
   private delegate void on_sandboxbuttonpressed();
@@ -24,7 +26,7 @@ public class VisualizerDropdown: Dropdown{
   [Export]
   private string InfoTitle;
   [Export]
-  private string DevOptionTitle = "Input devices";
+  private string DevOptionTitle = "Input devices", FlowOptionTitle = "Flow";
 
 
   public enum OptionEnum{
@@ -37,6 +39,16 @@ public class VisualizerDropdown: Dropdown{
     Disconnected
   }
 
+  public enum ChoiceType{
+    Device,
+    Flow
+  }
+
+
+  private KeyValuePair<string, int>[] devnames = new KeyValuePair<string, int>[0];
+  private int devidx = 0;
+  private KeyValuePair<string, int>[] flownames = new KeyValuePair<string, int>[0];
+  private int flowidx = 0;
 
   private HBoxContainer _taskbar;
   private VBoxContainer _editPanel;
@@ -50,7 +62,7 @@ public class VisualizerDropdown: Dropdown{
 
   private string _batteryLabel_template, _infoLabel_template, _soundLabel_template, _mcustateLabel_template, _sgstateLabel_template, _sandboxstateLabel_template;
 
-  private IEditInterface _soundDevChoice;
+  private IEditInterface _soundDevChoice, _flowChoice;
   
   private ConnectedState currentState;
 
@@ -73,6 +85,11 @@ public class VisualizerDropdown: Dropdown{
 
   private void _onDeviceChanged(int id, object obj){
     EmitSignal("on_changeindevice", (obj as EditChoice.get_data).choiceID);
+  }
+
+  private void _onFlowChanged(int id, object obj){
+    EmitSignal("on_changeflow", (obj as EditChoice.get_data).choiceID);
+    (_soundDevChoice as EditChoice).RemoveChoices();
   }
 
   private void _onEditPanelChanged(int idx, object obj){
@@ -103,7 +120,11 @@ public class VisualizerDropdown: Dropdown{
 
     _soundLabel = panelNode.GetNode<Label>("1/1/2/2");
 
-    _soundDevChoice = panelNode.GetNode<IEditInterface>("1/1/2/1");
+    _flowChoice = panelNode.GetNode<IEditInterface>("1/1/2/flow");
+    _flowChoice.Title = FlowOptionTitle;
+    (_flowChoice as EditChoice).Connect("on_edited", this, "_onFlowChanged");
+
+    _soundDevChoice = panelNode.GetNode<IEditInterface>("1/1/2/sound_devices");
     _soundDevChoice.Title = DevOptionTitle;
     (_soundDevChoice as EditChoice).Connect("on_edited", this, "_onDeviceChanged");
 
@@ -228,24 +249,56 @@ public class VisualizerDropdown: Dropdown{
     );
   }
 
-  private KeyValuePair<string, int>[] names = new KeyValuePair<string, int>[0];
-  private int devidx = 0;
-  public void SetSoundDevNames(string[] namearr){
-    names = new KeyValuePair<string, int>[namearr.Length];
-    for(int i = 0; i < namearr.Length; i++)
-      names[i] = new KeyValuePair<string, int>(namearr[i], i);
+  public void SetChoiceName(ChoiceType type, string[] namearr){
+    ref KeyValuePair<string, int>[] _choicenames = ref devnames;
+    ref int _choiceidx = ref devidx;
+    ref IEditInterface _choiceedit = ref _soundDevChoice;
+    switch(type){
+      case ChoiceType.Device:
+        _choicenames = ref devnames;
+        _choiceidx = ref devidx;
+        _choiceedit = ref _soundDevChoice;
+        break;
+      
+      case ChoiceType.Flow:
+        _choicenames = ref flownames;
+        _choiceidx = ref flowidx;
+        _choiceedit = ref _flowChoice;
+        break;
+    }
 
-    _soundDevChoice.ChangeContent(new EditChoice.set_param{
-      choiceID = devidx,
-      choices = names
+    _choicenames = new KeyValuePair<string, int>[namearr.Length];
+    for(int i = 0; i < namearr.Length; i++)
+      _choicenames[i] = new KeyValuePair<string, int>(namearr[i], i);
+    
+    _choiceedit.ChangeContent(new EditChoice.set_param{
+      choiceID = _choiceidx,
+      choices = _choicenames
     });
   }
 
-  public void SetSoundDevIndex(int currid){
-    devidx = currid;
-    _soundDevChoice.ChangeContent(new EditChoice.set_param{
-      choiceID = devidx,
-      choices = names
+  public void SetChoiceIndex(ChoiceType type, int currid){
+    ref KeyValuePair<string, int>[] _choicenames = ref devnames;
+    ref int _choiceidx = ref devidx;
+    ref IEditInterface _choiceedit = ref _soundDevChoice;
+    switch(type){
+      case ChoiceType.Device:
+        _choicenames = ref devnames;
+        _choiceidx = ref devidx;
+        _choiceedit = ref _soundDevChoice;
+        break;
+      
+      case ChoiceType.Flow:
+        _choicenames = ref flownames;
+        _choiceidx = ref flowidx;
+        _choiceedit = ref _flowChoice;
+        break;
+    }
+
+    _choiceidx = currid;
+    _choiceedit.ChangeContent(new EditChoice.set_param{
+      choiceID = _choiceidx,
+      choices = _choicenames
     });
   }
 

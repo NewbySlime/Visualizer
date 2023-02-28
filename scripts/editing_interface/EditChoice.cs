@@ -57,13 +57,17 @@ public class EditChoice: HBoxContainer, IEditInterface{
     choices.Connect("item_selected", this, "_onedited");
   }
 
+  public void RemoveChoices(){
+    listID.Clear();
+    dictID.Clear();
+    choices.Clear();
+  }
+
   public void ChangeContent(object content){
     if(content is set_param){
       set_param param = content as set_param;
 
-      listID.Clear();
-      dictID.Clear();
-      choices.Clear();
+      RemoveChoices();
       int i = 0;
       foreach(var pair in param.choices){
         listID.Add(pair.Value);

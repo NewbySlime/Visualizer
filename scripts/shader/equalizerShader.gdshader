@@ -167,13 +167,15 @@ void fragment(){
 			case 2:{
 				float deltaDb = intensity-min_intensity;
 				float deltaDbParam = (max_intensity-min_intensity)*(1f-_newuv.y);
-				if(deltaDb < 0.f)
-					return;
 				
-				 if(deltaDbParam > deltaDb)
+				if(deltaDbParam > deltaDb)
 					return;
+
+        float uvy = 0.f;
+				if(deltaDb >= 0.f)
+					uvy = _newuv.y-(1.0f-deltaDb/max_intensity);
 				
-				last_col = texture(TEXTURE, vec2(_newuv.x, _newuv.y-(1.0f-deltaDb/max_intensity)));
+				last_col = texture(TEXTURE, vec2(_newuv.x, uvy));
 				break;
 			}
 		}

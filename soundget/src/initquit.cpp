@@ -67,4 +67,6 @@ void _onQuitProg(){
     __firstInitF = true;
     delete cbsOnInit;
   }
+
+  printf("Program safely quitted.\n");
 }

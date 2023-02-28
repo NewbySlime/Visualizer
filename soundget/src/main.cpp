@@ -15,12 +15,10 @@
 #include "commctrl.h"
 #include "strsafe.h"
 
+#include "mmdeviceapi.h"
+
 
 /*      CONSTANT AND DEFINES      */
-#define SENDFLAG_VIS 0x1
-#define SENDFLAG_MC 0x2
-
-#define CHECKFLAG(num, flag) (num & flag) == flag
 #define CHECKDATALEN(num, size) if(num != size) return
 
 #define SOCKET_MSGPOLL 10
@@ -34,6 +32,15 @@
 
 #define WND_MAINCODEMENU 0x00
 #define WND_DEVCODEMENU 0x01
+#define WND_FLOWCODEMENU 0x02
+#define WND_STARTSOUNDGET 0x03
+
+#define WM_APP_NOTIFYICON WM_APP+0x01
+#define WM_APP_SOUNDGETNOTIFICATION WM_APP+0x02
+
+#define NOTIFYICON_UID 0
+
+#define SOUNDGET_SAFECHANGEDEFAULTWAIT std::chrono::seconds(1)
 
 
 // codes for controlling this program
@@ -77,6 +84,7 @@ const unsigned short
 // codes for soundget configuration
 const unsigned short
   // [SET] the input device (index based)
+  // [GET]
   CFG_SG_INPUTDEVICE = 0x0001,
   // [GET] asking and send input device name
   CFG_SG_INPUTDEVICESNAME = 0x0002,
@@ -93,9 +101,13 @@ const unsigned short
   CFG_SG_DELAYMS = 0x0006,
   // [GET] asking and send the numbers of channels
   CFG_SG_CHANNELS = 0x0007,
+  // [SET] setting the flow
+  // [GET] asking what the flow is
+  CFG_SG_FLOW = 0x0008,
   // [SET] many band to send to mcu (only for mcu)
   // [GET] (only for tool)
-  CFG_SG_MCUBAND = 0x0021
+  CFG_SG_MCUBAND = 0x0021,
+  CFG_SG_MCU_CAN_CHANGE_ADEV = 0x0022
 ;
 
 
@@ -117,6 +129,7 @@ const unsigned char
 const auto time_sleepsockthread = std::chrono::milliseconds(1000/SOCKET_MSGPOLL);
 
 
+typedef void(*SendMessagesCb)(std::vector<std::pair<const void*, size_t>> msgs);
 
 struct Socket_MessageCallbacks{
   public:
@@ -129,7 +142,11 @@ struct Socket_MessageCallbacks{
 
 enum PopupMenu_ChoiceEnum{
   ce_runeditor,
+  ce_startsoundget,
+  ce_separator1,
   ce_changeDev,
+  ce_changeflow,
+  ce_separator2,
   ce_quit,
   ce___enumlen
 };
@@ -163,7 +180,7 @@ std::vector<std::pair<char*, size_t>> _mcu_list_cryptkey;
 
 bool _mcu_threadrun = false;
 bool _vis_threadrun = false;
-bool _vis_keepconnection = true;
+bool _vis_keepconnection = true, _vis_closeconnection = false;
 std::thread t_mcusock;
 std::thread t_vissock;
 
@@ -181,12 +198,27 @@ std::thread _rv_thread;
 bool _rv_isrunning = false;
 
 
+//  config variables
+bool _mcu_can_change_audiodev = false;
+
+LPCWSTR _sg_dataflow_str[] = {
+  L"Render Device",
+  L"Capture Device"
+};
+
+int _sg_dataflow_strarrlen = sizeof(_sg_dataflow_str)/sizeof(const char*);
+
 
 
 
 /*      FUNCTION DECLARATIONS     */
 void sendMcuData(const void *data, size_t datalen);
-
+void SendMessagesMCU(std::vector<std::pair<const void*, size_t>> msg);
+void SendMessagesProg(std::vector<std::pair<const void*, size_t>> msg);
+void SendInDeviceData(SendMessagesCb cb, int idx = -1);
+void SendInDeviceCurrentIdx(SendMessagesCb cb);
+void SendInDevicesName(SendMessagesCb cb);
+void SendFlowType(EDataFlow flow, SendMessagesCb cb);
 
 
 
@@ -232,9 +264,9 @@ void initProgram(){
   HICON hIcon = (HICON)LoadImageW(NULL, L"../../icon.ico", IMAGE_ICON, 0, 0, LR_LOADFROMFILE);
   visIconData = NOTIFYICONDATAA{
     .hWnd = mWnd,
-    .uID = 0,
+    .uID = NOTIFYICON_UID,
     .uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP,
-    .uCallbackMessage = WM_APP+1,
+    .uCallbackMessage = WM_APP_NOTIFYICON,
     .hIcon = hIcon
   };
 
@@ -243,33 +275,29 @@ void initProgram(){
   Shell_NotifyIconA(NIM_ADD, &visIconData);
 
   DestroyIcon(hIcon);
+
+
+  // setting up socket to vis tool
+  progSock = new SocketHandler_Sync(port);
+  mcuSock = new SocketHandler_Sync(mcuport);
 }
 PROGINITFUNC(initProgram);
 
 
 void closeProgram(){
-  mcuSock->Disconnect();
-  if(t_mcusock.joinable())
-    t_mcusock.join();
-  
-  _vis_keepconnection = false;
-  progSock->Disconnect();
-  if(t_vissock.joinable())
-    t_vissock.join();
-
   Shell_NotifyIconA(NIM_DELETE, &visIconData);
   CloseWindow(mWnd);
   UnregisterClassW(MAIN_WINDOWCLASS, hInst);
 
   CoUninitialize();
+
+  mcuSock->SafeDelete();
+  progSock->SafeDelete();
+  delete progSock_cbs;
+
+  printf("done closing\n");
 }
 PROGQUITFUNC(closeProgram);
-
-// TODO
-// checking if there's a change in the devices of the soundget
-void CheckSGDevices(){
-
-}
 
 void QuitProgram(){
   PostMessageW(mWnd, WM_QUIT, 0, 0);
@@ -292,6 +320,11 @@ void _getConfigData(){
 
     {"default_mcuport", [](std::string &v){
         mcuport = stoi(v);
+      }
+    },
+
+    {"mcu_can_change_audiodev", [](std::string &v){
+        _mcu_can_change_audiodev = stoi(v);
       }
     }
   };
@@ -343,8 +376,14 @@ void _getConfigData(){
     }
 
     auto _iter = _cfgmap.find(attr_name);
-    if(_iter != _cfgmap.end())
-      _iter->second(attr_value);
+    if(_iter != _cfgmap.end()){
+      try{
+        _iter->second(attr_value);
+      }
+      catch(std::exception e){
+        printf("Config's attribute \'%s\' value is invalid.\n", attr_name.c_str());
+      }
+    }
     else
       printf("Config's attribute name \'%s\' is invalid.\n", attr_name.c_str());
     
@@ -420,6 +459,48 @@ void _update_mcu_list_cryptkey(){
 
 
 
+/*      Audio stuff     */
+void SetInDevIdx(int idx){
+  if(sg->IsListening()){
+    sg->StopListening();
+    sg->SetDevice(idx);
+    sg->StartListening();
+  }
+  else
+    sg->SetDevice(idx);
+
+  SendInDeviceData(SendMessagesProg);
+
+  if(_mcu_can_change_audiodev)
+    SendInDeviceData(SendMessagesMCU);
+}
+
+void SetInDevFlow(EDataFlow flow){
+  if(sg->IsListening()){
+    sg->StopListening();
+    sg->SetDeviceFlow(flow);
+    sg->SetDevice();
+    sg->StartListening();
+  }
+  else{
+    sg->SetDeviceFlow(flow);
+    sg->SetDevice();
+  }
+
+  SendInDevicesName(SendMessagesProg);
+  SendInDeviceData(SendMessagesProg);
+  SendFlowType(flow, SendMessagesProg);
+
+  if(_mcu_can_change_audiodev){
+    SendInDevicesName(SendMessagesMCU);
+    SendInDeviceData(SendMessagesMCU);
+    SendFlowType(flow, SendMessagesMCU);
+  }
+}
+
+
+
+
 
 
 /*      Connection stuff      */
@@ -471,6 +552,7 @@ void _threadMCU(){
     _mcu_connstate = MCUCONNSTATE_DISCONNECTED;
     _sendMCUState();
     _mcu_threadrun = false;
+    _mcu_handshaked = false;
   }
   catch(std::system_error e){
     std::cout << e.what() << std::endl;
@@ -479,10 +561,16 @@ void _threadMCU(){
 
 void _threadVis(){
   while(_vis_keepconnection){
-    if(progSock->IsConnected())
-      checkSocketMessage(progSock_cbs);
-    else
-      progSock->ReconnectSocket();
+    if(!_vis_closeconnection){
+      if(progSock->IsConnected())
+        checkSocketMessage(progSock_cbs);
+      else
+        progSock->ReconnectSocket();
+    }
+    else{
+      _vis_keepconnection = false;
+      progSock->Disconnect();
+    }
     
     std::this_thread::sleep_for(time_sleepsockthread);
   }
@@ -502,6 +590,7 @@ void _startthreadVis(){
   if(!_vis_threadrun){
     _vis_threadrun = true;
     _vis_keepconnection = true;
+    _vis_closeconnection = false;
 
     if(t_vissock.joinable())
       t_vissock.join();
@@ -513,30 +602,22 @@ void _startthreadVis(){
 
 
 
-/*      Sending function for tool     */
-void SendChannelSize(unsigned short channelSize, unsigned short flag){
-  if(CHECKFLAG(flag, SENDFLAG_VIS)){
-    LockSocket(progSock);
-    progSock->SendData(&GET_CONFIG_SG, sizeof(short));
-    progSock->SendData(&CFG_SG_CHANNELS, sizeof(short));
-    progSock->SendData(&channelSize, sizeof(channelSize));
-  }
+/*      Sending functions to tool and mcu     */
+void SendInDeviceCurrentIdx(SendMessagesCb cb){
+  int16_t idx = sg->GetIndex();
+  
+  cb({
+    {&GET_CONFIG_SG, sizeof(uint16_t)},
+    {&CFG_SG_INPUTDEVICESNAME, sizeof(uint16_t)},
+    {&idx, sizeof(int16_t)}
+  });
 }
 
-void SendFreqDataToAnotherProg(const float* amp, int length, const WAVEFORMATEX *wavform){
-  if(progSock->IsConnected()){
-    LockSocket(progSock);
-    progSock->SendData(&SOUNDDATA_DATA, sizeof(SOUNDDATA_DATA));
-    progSock->SendData(&length, sizeof(length));
-    progSock->SendData(amp, sizeof(float) * length);
-  }
-}
-
-void SendInDevicesName(){
+void SendInDevicesName(SendMessagesCb cb){
   auto devdata = sg->GetDevices();
   
   size_t datasize = 0;
-  datasize += sizeof(short);
+  datasize += sizeof(uint16_t);
 
   for(int i = 0; i < devdata->size(); i++){
     datasize += sizeof(int);
@@ -554,58 +635,107 @@ void SendInDevicesName(){
     _bir.setVarStr(devname->c_str(), devname->size());
   }
 
-  {LockSocket(progSock);
-    progSock->SendData(&GET_CONFIG_SG, sizeof(short));
-    progSock->SendData(&CFG_SG_INPUTDEVICESNAME, sizeof(short));
-    progSock->SendData(datastr, datasize);
-  }
+  cb({
+    {&GET_CONFIG_SG, sizeof(uint16_t)},
+    {&CFG_SG_INPUTDEVICESNAME, sizeof(uint16_t)},
+    {datastr, datasize}
+  });
 
   free(datastr);
 }
 
-void SendInDeviceData(int idx = -1){
-  int currentIndex = idx < 0 || idx >= sg->GetDevices()->size()? sg->GetIndex(): idx;
-  const std::string *devname = &sg->GetDevices()->operator[](currentIndex).deviceName;
-  auto wvf = sg->GetWaveFormat();
+void SendInDeviceData(SendMessagesCb cb, int idx){
+  int currentIndex = idx < 0? sg->GetIndex(): idx;
+  const SoundDevice *_currdev = sg->GetDevice(currentIndex);
+  const WAVEFORMATEX *pwvf = sg->GetWaveFormat();
+
+  std::string devname = "NULL";
+  WAVEFORMATEX wvf = WAVEFORMATEX();
+
+  if(pwvf && _currdev){
+    devname = _currdev->deviceName;
+    wvf = *pwvf;
+  }
 
   int datalen = 
     sizeof(int) +
     sizeof(int) + // length of the devname
-    devname->size() +
-    sizeof(wvf->nChannels) // ushort
+    devname.size() +
+    sizeof(wvf.nChannels) // ushort
   ;
 
   char *datastr = (char*)malloc(datalen);
 
   ByteIteratorR _bir(datastr, datalen);
   _bir.setVar(currentIndex);
-  _bir.setVar((int)devname->size());
-  _bir.setVarStr(devname->c_str(), devname->size());
-  _bir.setVar(wvf->nChannels);
+  _bir.setVar((int)devname.size());
+  _bir.setVarStr(devname.c_str(), devname.size());
+  _bir.setVar(wvf.nChannels);
 
-  {LockSocket(progSock);
-    progSock->SendData(&GET_CONFIG_SG, sizeof(short));
-    progSock->SendData(&CFG_SG_INPUTDEVICEDATA, sizeof(short));
-    progSock->SendData(datastr, datalen);
-  }
+  cb({
+    {&GET_CONFIG_SG, sizeof(uint16_t)},
+    {&CFG_SG_INPUTDEVICEDATA, sizeof(uint16_t)},
+    {datastr, datalen}
+  });
 
   free(datastr);
 }
 
-void SendNumBandMCU(){
+void SendInDeviceMany(SendMessagesCb cb){
+  uint16_t devMany = sg->GetDevices()->size();
+
+  cb({
+    {&GET_CONFIG_SG, sizeof(uint16_t)},
+    {&CFG_SG_MANYINPUTDEV, sizeof(uint16_t)},
+    {&devMany, sizeof(uint16_t)}
+  });
+}
+
+void SendChannelSize(unsigned short channelSize, SendMessagesCb cb){
+  cb({
+    {&GET_CONFIG_SG, sizeof(uint16_t)},
+    {&CFG_SG_CHANNELS, sizeof(uint16_t)},
+    {&channelSize, sizeof(channelSize)}
+  });
+}
+
+void SendNumBandMCU(SendMessagesCb cb){
   int datalen = sizeof(uint32_t);
   char *datastr = (char*)malloc(datalen);
 
   ByteIteratorR _bir(datastr, datalen);
   _bir.setVar(_mcu_ledcount);
 
-  {LockSocket(progSock);
-    progSock->SendData(&GET_CONFIG_SG, sizeof(uint16_t));
-    progSock->SendData(&CFG_SG_MCUBAND, sizeof(uint16_t));
-    progSock->SendData(datastr, datalen);
-  }
+  cb({
+    {&GET_CONFIG_SG, sizeof(uint16_t)},
+    {&CFG_SG_MCUBAND, sizeof(uint16_t)},
+    {datastr, datalen}
+  });
 
   free(datastr);
+}
+
+void SendFlowType(EDataFlow flow, SendMessagesCb cb){
+  cb({
+    {&GET_CONFIG_SG, sizeof(uint16_t)},
+    {&CFG_SG_FLOW, sizeof(uint16_t)},
+    {&flow, sizeof(int16_t)}
+  });
+}
+
+
+
+
+
+
+/*      Sending function for tool     */
+void SendFreqDataToAnotherProg(const float* amp, int length, const WAVEFORMATEX *wavform){
+  if(progSock->IsConnected()){
+    LockSocket(progSock);
+    progSock->SendData(&SOUNDDATA_DATA, sizeof(SOUNDDATA_DATA));
+    progSock->SendData(&length, sizeof(length));
+    progSock->SendData(amp, sizeof(float) * length);
+  }
 }
 
 
@@ -619,18 +749,9 @@ void onMsgGet_SetConfigSG(char **buffer, int *buflength){
   code = *reinterpret_cast<unsigned short*>(buffer[0]);
 
   switch(code){
-    // TODO
     break; case CFG_SG_INPUTDEVICE:{
-      CHECKDATALEN(buflength[1], sizeof(int));
-
-      int idx = 0;
-      idx = *reinterpret_cast<int*>(buffer[1]);
-
-      sg->StopListening();
-      sg->SetDevice(idx);
-      sg->StartListening();
-
-      SendInDeviceData();
+      CHECKDATALEN(buflength[1], sizeof(int16_t));
+      SetInDevIdx(*reinterpret_cast<int16_t*>(buffer[1]));
     }
 
     break; case CFG_SG_SENDRATE:{
@@ -638,8 +759,14 @@ void onMsgGet_SetConfigSG(char **buffer, int *buflength){
       sg->SetUpdate(*reinterpret_cast<uint16_t*>(buffer[1]));
     }
 
+    // TODO
     break; case CFG_SG_DELAYMS:{
 
+    }
+
+    break; case CFG_SG_FLOW:{
+      CHECKDATALEN(buflength[1], sizeof(int16_t));
+      SetInDevFlow((EDataFlow)*reinterpret_cast<uint16_t*>(buffer[1]));
     }
   }
 }
@@ -672,25 +799,28 @@ void onMsgGet_GetConfigSG(char **buffer, int *buflength){
   CHECKDATALEN(buflength[0], sizeof(uint16_t));
   unsigned short code = *reinterpret_cast<unsigned short*>(buffer[0]);
   switch(code){
-    // TODO
     break; case CFG_SG_INPUTDEVICESNAME:{
-      SendInDevicesName();
+      SendInDevicesName(SendMessagesProg);
     }
 
     break; case CFG_SG_INPUTDEVICEDATA:{
-      SendInDeviceData();
+      SendInDeviceData(SendMessagesProg);
     }
 
     break; case CFG_SG_MANYINPUTDEV:{
-      
+      SendInDeviceMany(SendMessagesProg);
     }
 
     break; case CFG_SG_CHANNELS:{
-      SendChannelSize(sg->GetWaveFormat()->nChannels, SENDFLAG_VIS);
+      SendChannelSize(sg->GetWaveFormat()->nChannels, SendMessagesProg);
     }
 
     break; case CFG_SG_MCUBAND:{
+      SendNumBandMCU(SendMessagesProg);
+    }
 
+    break; case CFG_SG_FLOW:{
+      SendFlowType(sg->GetDataFlow(), SendMessagesProg);
     }
   }
 }
@@ -814,6 +944,13 @@ void onMsgGetMcu_SetConfigSG(char *data, int datalen){
 
   uint16_t confcode; b_iter.getVar(confcode);
   switch(confcode){
+    break; case CFG_SG_INPUTDEVICE:{
+      if(_mcu_can_change_audiodev && b_iter.available() >= sizeof(uint16_t)){
+        int16_t sidx; b_iter.getVar(sidx);
+        SetInDevIdx(sidx);
+      }
+    }
+
     break; case CFG_SG_SENDRATE:{
       if(b_iter.available() < sizeof(uint16_t))
         return;
@@ -842,32 +979,31 @@ void onMsgGetMcu_GetConfigSG(char *data, int datalen){
 
   uint16_t confcode; b_iter.getVar(confcode);
   switch(confcode){
+    break; case CFG_SG_INPUTDEVICE:{
+      if(_mcu_can_change_audiodev)
+        SendInDeviceCurrentIdx(SendMessagesMCU);
+    }
+    
     break; case CFG_SG_INPUTDEVICEDATA:{
-      int16_t sidx; b_iter.getVar(sidx);
-      sidx = sidx < 0 || sidx >= sg->GetDevices()->size()? sg->GetIndex(): sidx;
-      const std::string *devname = &sg->GetDevices()->operator[](sidx).deviceName;
-      auto wvf = sg->GetWaveFormat();
+      if(_mcu_can_change_audiodev){
+        int16_t sidx; b_iter.getVar(sidx);
+        SendInDeviceData(SendMessagesMCU, sidx);
+      }
+    }
 
-      int datalen =
-        sizeof(uint16_t) +
-        sizeof(uint16_t) +
-        sizeof(uint16_t) +
-        sizeof(int) +
-        devname->size() +
-        sizeof(wvf->nChannels)
-      ;
+    break; case CFG_SG_MANYINPUTDEV:{
+      if(_mcu_can_change_audiodev)
+        SendInDeviceMany(SendMessagesMCU);
+    }
 
-      char datastr[datalen];
-      
-      ByteIteratorR_Encryption _bir(datastr, datalen, &_mcu_cryptkey);
-      _bir.setVar(GET_CONFIG_SG);
-      _bir.setVar(CFG_SG_INPUTDEVICEDATA);
-      _bir.setVar((uint16_t)sidx);
-      _bir.setVar((int)devname->size());
-      _bir.setVarStr(devname->c_str(), devname->size());
-      _bir.setVar(wvf->nChannels);
+    break; case CFG_SG_MCU_CAN_CHANGE_ADEV:{
+      bool _b = _mcu_can_change_audiodev;
 
-      sendMcuData(datastr, datalen);
+      SendMessagesMCU({
+        {&GET_CONFIG_SG, sizeof(uint16_t)},
+        {&CFG_SG_MCU_CAN_CHANGE_ADEV, sizeof(uint16_t)},
+        {&_b, sizeof(bool)}
+      });
     }
   }
 }
@@ -1065,6 +1201,26 @@ void sendMcuData(const void *buf, size_t buflen){
   }
 }
 
+void SendMessagesMCU(std::vector<std::pair<const void*, size_t>> msg){
+  size_t datalen = 0;
+  for(size_t i = 0; i < msg.size(); i++)
+    datalen += msg[i].second;
+  
+  char data[datalen];
+  ByteIteratorR_Encryption _bir(data, datalen, &_mcu_cryptkey);
+  for(size_t i = 0; i < msg.size(); i++)
+    _bir.setVarStr(reinterpret_cast<const char*>(msg[i].first), msg[i].second);
+
+  sendMcuData(data, datalen);
+}
+
+void SendMessagesProg(std::vector<std::pair<const void*, size_t>> msg){
+  {LockSocket(progSock);
+    for(size_t i = 0; i < msg.size(); i++)
+      progSock->SendData(msg[i].first, msg[i].second);
+  }
+}
+
 void checkMcuMessage(){
   if(mcuSock->IsConnected()){
     // send visualizer signal that the mcu is connected
@@ -1213,7 +1369,7 @@ void runVisualizer(){
 
 LRESULT mainWindProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam){
   switch(msg){
-    break; case WM_APP+1:{
+    break; case WM_APP_NOTIFYICON:{
       UINT16 id = HIWORD(lParam);
       UINT16 act = LOWORD(lParam);
       switch(act){
@@ -1224,18 +1380,32 @@ LRESULT mainWindProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam){
             switch((PopupMenu_ChoiceEnum)i){
               break; case ce_runeditor:
                 AppendMenuW(hMenu, MF_STRING | MF_BYPOSITION, (int)ce_runeditor | (WND_MAINCODEMENU << 8), L"Run Editor");
+
+              break; case ce_startsoundget:
+                AppendMenuW(hMenu, MF_STRING | MF_BYPOSITION, (int)ce_startsoundget | (WND_STARTSOUNDGET << 8), sg->IsListening()? L"Stop Listening": L"Start Listening");
               
               break; case ce_changeDev:{
                 HMENU _hsubmenu = CreatePopupMenu();
                 
                 auto _devdata = sg->GetDevices();
-                for(int i = 0; i < _devdata->size(); i++){
-                  int _strsize = MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, _devdata->operator[](i).deviceName.c_str(), -1, NULL, 0);
+                for(int i = 0; i <= _devdata->size(); i++){
+                  const char *_devstr = (i == 0)? "Default": _devdata->operator[](i-1).deviceName.c_str();
+                  int _strsize = MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, _devstr, -1, NULL, 0);
 
-                  LPWSTR _wstr = (LPWSTR)malloc((_strsize)*sizeof(WCHAR));
-                  MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, _devdata->operator[](i).deviceName.c_str(), -1, _wstr, _strsize);
+                  LPWSTR _wstr = (LPWSTR)malloc(_strsize*sizeof(WCHAR));
+                  MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, _devstr, -1, _wstr, _strsize);
 
-                  AppendMenuW(_hsubmenu, MF_STRING | MF_BYPOSITION, i | (WND_DEVCODEMENU << 8), _wstr);
+
+                  AppendMenuW(
+                    _hsubmenu,
+                    MF_STRING | MF_BYPOSITION | ((i == (sg->GetIndex()+1))? MF_CHECKED: 0),
+                    i | (WND_DEVCODEMENU << 8),
+                    _wstr
+                  );
+
+                  if(i == 0)
+                    AppendMenuW(_hsubmenu, MF_SEPARATOR, NULL, NULL);
+
                   free(_wstr);
                 }
 
@@ -1243,9 +1413,29 @@ LRESULT mainWindProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam){
 
                 DestroyMenu(_hsubmenu);
               }
+
+              break; case ce_changeflow:{
+                HMENU _hsubmenu = CreatePopupMenu();
+
+                for(int i = 0; i < _sg_dataflow_strarrlen; i++)
+                  AppendMenuW(
+                    _hsubmenu,
+                    MF_STRING | MF_BYPOSITION | ((i == sg->GetDataFlow())? MF_CHECKED: 0),
+                    i | (WND_FLOWCODEMENU << 8),
+                    _sg_dataflow_str[i]
+                  );
+
+                AppendMenuW(hMenu, MF_STRING | MF_BYPOSITION | MF_POPUP, (UINT_PTR)_hsubmenu, L"Change Flow");
+                DestroyMenu(_hsubmenu);
+              }
               
               break; case ce_quit:
                 AppendMenuW(hMenu, MF_STRING | MF_BYPOSITION, (int)ce_quit | (WND_MAINCODEMENU << 8), L"Quit");
+              
+              break;
+                case ce_separator1:
+                case ce_separator2:
+                  AppendMenuW(hMenu, MF_SEPARATOR, NULL, NULL);
             }
           }
 
@@ -1263,6 +1453,10 @@ LRESULT mainWindProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam){
         }
       }
     }
+
+    break; case WM_APP_SOUNDGETNOTIFICATION:
+      std::this_thread::sleep_for(SOUNDGET_SAFECHANGEDEFAULTWAIT);
+      sg->GetNotificationHandler()->CheckNotifications();
 
     break; case WM_COMMAND:{
       UINT16 type = HIWORD(wParam);
@@ -1286,7 +1480,18 @@ LRESULT mainWindProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam){
             }
 
             break; case WND_DEVCODEMENU:{
-              sg->SetDevice(id);
+              SetInDevIdx(id-1);
+            }
+
+            break; case WND_FLOWCODEMENU:{
+              SetInDevFlow((EDataFlow)id);
+            }
+
+            break; case WND_STARTSOUNDGET:{
+              if(sg->IsListening())
+                sg->StopListening();
+              else
+                sg->StartListening();
             }
           }
         }
@@ -1301,13 +1506,23 @@ LRESULT mainWindProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam){
   }
 }
 
+void _soundget_callbackOnChanged(SoundGet::SoundGetNotification_changeStatus status){
+  printf("soundget status %d\n", status);
+  switch(status){
+    break; case SoundGet::SoundGetNotification_changeStatus::SGN_STATUS_DEFAULTCHANGED:
+      SendInDeviceData(SendMessagesProg);
+    
+    break;
+      case SoundGet::SoundGetNotification_changeStatus::SGN_STATUS_ADDED:
+      case SoundGet::SoundGetNotification_changeStatus::SGN_STATUS_REMOVED:
+        SendInDevicesName(SendMessagesProg);
+  }
+}
+
 
 int main(){
-  _onInitProg();  
+  _onInitProg();
 
-  // setting up socket to vis tool
-  progSock = new SocketHandler_Sync(port);
-  mcuSock = new SocketHandler_Sync(mcuport);
   progSock_cbs = new Socket_MessageCallbacks{
     .s_socket = progSock,
     .callbacks = {
@@ -1327,19 +1542,23 @@ int main(){
   sg = new SoundGet();
   sg->CallbackListenerRaw = SendFreqDataToAnotherProg;
   sg->CallbackListener = SendFreqDataToMCU;
+
+  SoundGet::_NotificationHandling *_sghandler = sg->GetNotificationHandler();
+  _sghandler->UseCallback_onDeviceChanged(_soundget_callbackOnChanged);
+  _sghandler->BindProcess(mWnd, WM_APP_SOUNDGETNOTIFICATION);
+
   auto devices = sg->GetDevices();
   for(int i = 0; i < devices->size(); i++){
     printf("%s\n", devices->operator[](i).deviceName.c_str());
   }
 
-
   // starting threads
-  sg->SetDevice(0);
+  sg->SetDevice();
   sg->StartListening();
 
   _startthreadVis();
 
-  _mcu_ipaddr = 0xe322a8c0;
+  _mcu_ipaddr = 0xe39ea8c0;
   _startthreadMCU();
 
   MSG msg;
@@ -1349,11 +1568,15 @@ int main(){
     DispatchMessage(&msg);
   }
 
-  sg->StopListening();
 
-  mcuSock->SafeDelete();
-  progSock->SafeDelete();
-  delete progSock_cbs;
+  sg->StopListening();
+  mcuSock->Disconnect();
+  if(t_mcusock.joinable())
+    t_mcusock.join();
+  
+  _vis_closeconnection = true;
+  if(t_vissock.joinable())
+    t_vissock.join();
 
   _onQuitProg();
 }

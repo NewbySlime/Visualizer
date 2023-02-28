@@ -1,0 +1,148 @@
+key bin dump
+6 97 20 D 49 96 92 C 53 1C 9B 31 F6 B0 1 36 1A 4F 16 4 40 83 1D 1B 58 25 36 48 D0 1F 0 0 D1 1F 0 0 D2 1F 0 0 D3 1F 0 0 D4 1F 0 0 D5 1F 0 0 D6 1F 0 0 D7 1F 0 44 C3 7E 0 7 IP: 192.168.216.227                                            0 D4 1F 0 0 D5 1F 0 0 D6 1F 0 0 D7 1F 0 44 C3 7E 0 7 IP: 192.168.216.227
+test
+_handshaketimer 5
+Not pairing mode
+size 64 maxlen 48 minlen 16
+handshake timeout
+_itercheck 1
+_check 2 3
+timems 392
+act_right
+Txtsizex1 0, Txtsizey1 0
+cleared.
+_itercheck 1
+_check 2 3
+timems 394
+act_right
+Txtsizex1 0, Txtsizey1 0
+cleared.
+_itercheck -1
+pair mode: true
+Txtsizex1 0, Txtsizey1 0
+_check 0 -1
+timems 1390
+changing from 0 0, to 1 46
+cleared.
+changing from 1 0, to 2 46
+changing from 2 0, to 3 46
+changing from 3 0, to 0 46
+changing from 0 0, to 1 46
+changing from 1 0, to 2 46
+changing from 2 0, to 3 46
+changing from 3 0, to 0 46
+changing from 0 0, to 1 46
+changing from 1 0, to 2 46
+changing from 2 0, to 3 46
+changing from 3 0, to 0 46
+changing from 0 0, to 1 46
+changing from 1 0, to 2 46
+changing from 2 0, to 3 46
+changing from 3 0, to 0 46
+changing from 0 0, to 1 46
+changing from 1 0, to 2 46
+test
+_handshaketimer 6
+Pairing mode
+changing from 2 0, to 3 46
+changing from 3 0, to 0 46
+changing from 0 0, to 1 46
+changing from 1 0, to 2 46
+changing from 2 0, to 3 46
+Not handshaked
+Msg Code 256
+_datalen 66
+changing from 3 0, to 0 46
+Not handshaked
+Msg Code 257
+Connecting
+key bin dump
+CF 1C 59 86 66 87 90 89 AA A1 E6 7F 9A 54 5 3B 55 C8 4F AB 70 9E B6 A2 AA A1 76 BA 57 50 1 8 50 48 A CF 6C 48 18 CF 
+B9 41 DA DC 57 50 2 D BE 45 23 4D B5 9A 88 23 A7 C0 3E 19 5F 20 2 F bufwrite id 7
+Handshaked
+bufwrite id 6
+bufwrite id 6
+bufwrite id 6
+bufwrite id 6
+bufwrite id 6
+bufwrite id 6
+_itercheck -1
+buflen 40
+msgcode 20
+forcode 103
+buflen 5
+msgcode 22
+buflen 6
+msgcode 22
+
+--------------- CUT HERE FOR EXCEPTION DECODER ---------------
+
+Exception (28):
+epc1=0x40206d9a epc2=0x00000000 epc3=0x00000000 excvaddr=0x00000008 depc=0x00000000
+
+LoadProhibited: A load referenced a page mapped with an attribute that does not permit loads
+  epc1=0x40206d9a in _audioDevice_datalist_resize(unsigned int) at ??:?
+
+>>>stack>>>
+
+ctx: cont
+sp: 3ffffcb0 end: 3fffffc0 offset: 0190
+3ffffe40:  3ffffde9 00000001 00000010 3ffffe80  
+3ffffe50:  3ffffe80 3ffffe94 00000002 4020538c  
+3ffffe60:  00000000 3fff09cc 00000022 3ffffe80  
+3ffffe70:  00000000 3fff09cc 00000022 40207007  
+3ffffe80:  05590001 3fffdad0 3fff1aec 402463b2  
+3ffffe90:  000000ff 40213a38 00000006 00000006  
+3ffffea0:  3fff0de0 3fff09cc f374bc6a 00000000  
+3ffffeb0:  000457fc 00000022 00000006 4020d6f4  
+3ffffec0:  3fff0de6 00fb00ff 00000006 00000000  
+3ffffed0:  3fff4eb4 3fff4e94 00000003 3fff1aec  
+3ffffee0:  00000001 3fff0de0 3fff0dbc 4020a190  
+3ffffef0:  00000006 00000000 3fff4cbc 4020a9c0  
+3fffff00:  00000000 4bc60002 4e560418 0195851a  
+3fffff10:  00000000 00000000 4bc6a7f0 00000000  
+3fffff20:  00000001 00000006 40100649 3fff1aec  
+3fffff30:  00000001 3fff49ec 3fff0dab 4020a2af  
+3fffff40:  00000002 00000008 3fff44dc 3fff1aec  
+3fffff50:  3fffdad0 00000000 3fff1ad8 40205140  
+3fffff60:  3fffdad0 3fff49ec 3fff49ec 4020a308  
+3fffff70:  3fffdad0 3fff49ec 3fff49e4 402081c0  
+3fffff80:  00000000 00000000 3fff1ad8 402013c5  
+3fffff90:  3fffdad0 00000000 3fff1ad8 402061f0  
+3fffffa0:  3fffdad0 00000000 3fff1ad8 4020f200
+3fffffb0:  feefeffe feefeffe 3ffe877c 401011a1  
+<<<stack<<<
+
+0x4020538c in ByteIterator_Encryption::getVarStr(char*, unsigned int) at ??:?
+0x40207007 in callbacksock(char const*, int) at ??:?
+0x402463b2 in pbuf_free_LWIP2 at /home/earle/src/esp-quick-toolchain/arduino/tools/sdk/lwip2/builder/lwip2-src/src/core/pbuf.c:786
+ (inlined by) pbuf_free_LWIP2 at /home/earle/src/esp-quick-toolchain/arduino/tools/sdk/lwip2/builder/lwip2-src/src/core/pbuf.c:725
+0x40213a38 in std::_Function_handler<bool (), settimeofday::{lambda()#1}>::_M_manager(std::_Any_data&, std::_Function_handler<bool (), settimeofday::{lambda()#1}> const&, std::_Manager_operation) at time.cpp:?
+0x4020d6f4 in WiFiClient::read(char*, unsigned int) at ??:?
+0x4020a190 in _socket_update() at ??:?
+0x4020a9c0 in visualizer::update() at ??:?
+0x40100649 in millis at ??:?
+0x4020a2af in server_update() at ??:?
+0x40205140 in _update_sendled(void*) at ??:?
+0x4020a308 in _server_update(void*) at ??:?
+0x402081c0 in polling_update() at ??:?
+0x402013c5 in _run_anothertask() at ??:?
+0x402061f0 in loop at ??:?
+0x4020f200 in loop_wrapper() at core_esp8266_main.cpp:?
+0x401011a1 in cont_wrapper at ??:?
+
+
+--------------- CUT HERE FOR EXCEPTION DECODER ---------------
+��memory: 31552
+Password will be read from EEPROM
+test
+Txtsizex1 0, Txtsizey1 0
+changing from 0 0, to 0 0
+changing from 0 0, to 0 0
+_itercheck 1
+done reading
+name Default
+key bin dump
+CF 1C 59 86 66 87 90 89 AA A1 E6 7F 9A 54 5 3B 55 C8 4F AB 70 9E B6 A2 AA A1 76 BA D0 1F 0 0 D1 1F 0 0 D2 1F 0 0 D3 
+1F 0 0 D4 1F 0 0 D5 1F 0 0 D6 1F 0 0 D7 1F 0 44 5F 20 2 F Txtsizex1 0, Txtsizey1 0
+IP: 192.168.216.227

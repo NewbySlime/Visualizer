@@ -25,6 +25,7 @@ _popupEdit = ExtResource( 5 )
 _popupEdit_IPPort = ExtResource( 11 )
 _waitForSGConn = 5.0
 _errorSGDcMsg = "Cannot connect to soundget."
+max_intensity = 10.0
 
 [node name="1" type="HBoxContainer" parent="."]
 margin_right = 1025.0
